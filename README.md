@@ -1,9 +1,7 @@
 # quantum-signal-engine
 
-Quantum node state signal generator for the Marine Intelligence System.
-Produces deterministic, schema-validated events for BHIV Core ingestion.
-
----
+Quantum node state signal generator integrated with Kanishk's physical execution engine.
+Proves: 1 signal → 1 execution → 1 observable state change.
 
 ## Run
 
@@ -13,67 +11,44 @@ python run_signal.py
 
 No arguments. No dependencies. Python 3.8+.
 
----
-
 ## Structure
 
 ```
 quantum-signal-engine/
 ├── src/
-│   ├── signal_generator.py   ← entry logic (calls mapping + builds event)
-│   ├── mapping_logic.py      ← deterministic state transition rules
-│   └── validator.py          ← schema validation + failure checks
-├── run_signal.py             ← MAIN ENTRY POINT
+│   ├── signal_generator.py    ← Dhiraj: quantum event generator (Task 4, unchanged)
+│   ├── mapping_logic.py       ← Dhiraj: deterministic state transition rules
+│   ├── validator.py           ← Dhiraj: schema validation
+│   ├── execution_engine.py    ← NEW: wraps Kanishk's MultiZoneExecutor
+│   └── integration_runner.py  ← NEW: direct invocation bridge
+├── physical_engine/           ← Kanishk's real engine (integrated)
+│   ├── ship_state_vector.py   ← ShipState, ShipStateVector
+│   ├── transition_engine.py   ← TransitionInput, DeterministicTransitionEngine
+│   └── multi_zone_executor.py ← MultiZoneExecutor (4-zone hull model)
+├── run_signal.py              ← MAIN ENTRY POINT
 ├── requirements.txt
-├── README.md
-└── review_packets/
-    ├── task_1_review.md
-    ├── task_2_review.md
-    ├── task_3_review.md
-    └── task_4_review.md
+└── review_packets_/
+    └── task_5_review.md
 ```
 
----
+## Integration Flow
 
-## API
-
-```python
-from src.signal_generator import generate_state_event
-
-event = generate_state_event({
-    "node_id":      "qnode_01",
-    "energy_delta": 0.0001,
-    "iterations":   120,
-    "confidence":   0.92,
-    "variance":     0.002
-})
+```
+input_payload
+    → generate_state_event()          [Dhiraj — signal layer]
+    → _signal_to_transition_rates()   [deterministic mapping]
+    → MultiZoneExecutor.execute_batch() [Kanishk — real engine]
+    → ShipState updated (corrosion, coating, risk_score)
+    → pre_hash ≠ post_hash            [observable proof]
 ```
 
-Output schema: `engine_event_version 2.0`
+## Execution Policy
 
----
-
-## State Transitions
-
-| Condition | State |
-|---|---|
-| `energy_delta > 0.01` | DIVERGED |
-| `iterations > 500` | DIVERGED |
-| `confidence < 0.70` | SUSPENDED |
-| `variance > 0.01` | SUSPENDED |
-| `confidence >= 0.85` AND `variance <= 0.005` AND `energy_delta <= 0.005` | CONVERGED |
-| fallback | SUSPENDED |
-
----
-
-## Guarantees
-
-- Same input → identical output, always
-- Timestamp derived from `iterations`, not `datetime.now()`
-- No file I/O, no global state, no randomness in core engine
-- Input validated before any computation; output validated before return
-- Fails loudly on bad input — no silent failures
-
----
+| Signal | Action | Kanishk's Engine | State |
+|---|---|---|---|
+| CONVERGED | EXECUTED | ✅ Called | ✅ Updated |
+| SUSPENDED | SKIPPED | ❌ Not called | ❌ Unchanged |
+| DIVERGED | LOGGED | ❌ Not called | ❌ Unchanged |
+| Bad schema | REJECTED | ❌ Not called | ❌ Unchanged |
 
 *Dhiraj Chavan · Marine Intelligence System · April 2026*
