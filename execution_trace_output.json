@@ -1,0 +1,104 @@
+{
+  "steps": [
+    {
+      "step": 1,
+      "action": "initialize",
+      "hash": "26f283980dc23de71849abb501bae6e9db06df325339a684f46765eff6690722"
+    },
+    {
+      "step": 2,
+      "action": "accept_simulation",
+      "sim_count": 3
+    },
+    {
+      "step": 3,
+      "action": "validate_convert",
+      "batches": 3
+    },
+    {
+      "step": 4,
+      "action": "local_execution",
+      "hash": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f"
+    },
+    {
+      "step": 5,
+      "action": "distributed_execution",
+      "hash": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f",
+      "nodes": 3
+    },
+    {
+      "step": 6,
+      "action": "observability",
+      "divergence_rate": 0.0
+    },
+    {
+      "step": 7,
+      "action": "replay_proof",
+      "hash": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f"
+    }
+  ],
+  "hashes": {
+    "initial_state": "26f283980dc23de71849abb501bae6e9db06df325339a684f46765eff6690722",
+    "local_final_state": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f",
+    "distributed_final_state": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f",
+    "replay_final_state": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f",
+    "replay_distributed_state": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f"
+  },
+  "verifications": {
+    "chain_integrity": true,
+    "cross_zone_consistency": true,
+    "distributed_consensus": true,
+    "local_distributed_match": true,
+    "replay_match": true,
+    "distributed_replay_match": true,
+    "all_hashes_identical": true
+  },
+  "metrics": {
+    "throughput": {
+      "total_transitions": 12,
+      "total_batches": 3,
+      "transitions_per_sec": 336.8847,
+      "batches_per_sec": 84.2212
+    },
+    "latency": {
+      "avg_ms": 6.7321,
+      "p50_ms": 6.4066,
+      "p99_ms": 11.8493,
+      "max_ms": 11.8493
+    },
+    "divergence": {
+      "total_checks": 3,
+      "divergence_count": 0,
+      "divergence_rate": 0.0
+    },
+    "state": {
+      "active_zones": 4,
+      "global_hash": "de3561826877eaa8a08138d9bf49f8887f71a4469047f46a25b3dfb590d89c8f",
+      "batch_chain_hash": "f4916a4741dd8cc01f414bd26aa621d65441b74b128d4e5f5da6224dd0c0ee66"
+    },
+    "cluster": {
+      "total_nodes": 3,
+      "consensus": true
+    },
+    "nodes": [
+      {
+        "node_id": "Sector_A",
+        "committed_causal_id": 3,
+        "global_hash": "de3561826877eaa8...",
+        "batch_count": 3
+      },
+      {
+        "node_id": "Sector_B",
+        "committed_causal_id": 3,
+        "global_hash": "de3561826877eaa8...",
+        "batch_count": 3
+      },
+      {
+        "node_id": "Sector_C",
+        "committed_causal_id": 3,
+        "global_hash": "de3561826877eaa8...",
+        "batch_count": 3
+      }
+    ]
+  }
+}
