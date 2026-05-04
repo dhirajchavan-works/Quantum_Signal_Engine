@@ -17,8 +17,6 @@ import json
 import os
 import sys
 
-# ── Path bootstrap (must be first, before any project imports) ────────────────
-# Works regardless of which directory python is called from.
 _REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 _SRC_DIR   = os.path.join(_REPO_ROOT, "src")
 
@@ -26,17 +24,14 @@ for _p in [_REPO_ROOT, _SRC_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# UTF-8 stdout fix for Windows
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-# ── Project imports (paths guaranteed above) ──────────────────────────────────
 import signal_generator
 import execution_engine
 import integration_runner
 from validator import ValidationError
 
-# ── Inputs ────────────────────────────────────────────────────────────────────
 SAMPLE_INPUT = {
     "node_id":      "qnode_01",
     "energy_delta": 0.0001,
@@ -89,7 +84,6 @@ def run():
     print(json.dumps(SAMPLE_INPUT, indent=2))
 
     event = signal_generator.generate_state_event(SAMPLE_INPUT)
-
     print("\nSignal Output:")
     print(json.dumps(event, indent=2))
 
@@ -185,7 +179,6 @@ def run():
     print(f"\n  [{'PASS' if trace_ok else 'FAIL'}] "
           f"trace_id + node_id + final_state all present and correct.")
 
-    # ── Summary ────────────────────────────────────────────────────
     _sep()
     overall = all_same and hash_changed and state_changed and trace_ok
     print(f"\n  EXECUTION COMPLETE  |  Overall: {'PASS' if overall else 'FAIL'}")
