@@ -1,0 +1,15 @@
+Task 6 final: fix all reviewer gaps
+
+Gaps fixed:
+1. seq always static → SequenceRegistry: per-node monotonic, caller-owned, no global state
+2. No abstraction boundary → signal_adapter.py: ONLY crossing point signal→execution
+3. _signal_to_transition_rates() embedded in execution → moved to signal_adapter.adapt_event_to_transition()
+4. No multi-event handling → process_event_batch() calls Kanishk's real MultiZoneExecutor
+5. No external trigger boundary → process_event_batch() importable, no run_*.py dependency
+
+Verified PASS:
+- run_signal.py: Phases 4-8 all PASS
+- run_multi_event.py: Phases 1-6 all PASS
+- 5-run determinism: hashes identical
+- Order sensitivity: Case A == Case B
+- Execution integrity: CONVERGED applied, SUSPENDED/DIVERGED blocked
