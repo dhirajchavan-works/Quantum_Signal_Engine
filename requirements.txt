@@ -1,4 +1,4 @@
-# quantum-signal-engine
+# quantum-signal-engine — Task 7
 # No external dependencies required.
 # All modules used are Python standard library only.
 #
@@ -7,8 +7,8 @@
 # Standard library used:
 #   math      — sqrt() for sigma computation
 #   datetime  — deterministic timestamp generation
+#   hashlib   — SHA-256 for state hashing
 #   json      — event serialisation
-#   hashlib   — SHA-256 for trace_id and final_hash
 #   sys       — path management, exit codes
 #   io        — Windows UTF-8 stdout fix
 #   os        — path resolution
