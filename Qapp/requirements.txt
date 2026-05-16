@@ -1,0 +1,8 @@
+# quantum-signal-engine — Task 9
+# No external dependencies required.
+# Python >= 3.8
+#
+# Standard library only:
+#   hashlib    — SHA-256 hash chain computation
+#   dataclasses — frozen QAppExecutionEnvelope
+#   sys        — exit codes
