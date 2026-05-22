@@ -1,8 +1,27 @@
-# quantum-signal-engine — Task 9
-# No external dependencies required.
-# Python >= 3.8
+# requirements.txt
+# Task 9 — Distributed QApp Propagation Layer
+# Marine Intelligence System | BHIV Core
 #
-# Standard library only:
-#   hashlib    — SHA-256 hash chain computation
-#   dataclasses — frozen QAppExecutionEnvelope
-#   sys        — exit codes
+# ┌─────────────────────────────────────────────────────────────┐
+# │  NO EXTERNAL DEPENDENCIES                                   │
+# │                                                             │
+# │  This project uses Python standard library only.           │
+# │  No pip install required.                                   │
+# │                                                             │
+# │  Python >= 3.8                                              │
+# └─────────────────────────────────────────────────────────────┘
+#
+# Standard library modules used:
+#
+#   hashlib     — SHA-256 computation for all IDs and hash chains
+#   dataclasses — @dataclass(frozen=True) for QAppExecutionEnvelope
+#   datetime    — deterministic timestamp: anchor + (seq × 60s)
+#                 NOTE: datetime.now() is NEVER called anywhere
+#   json        — canonical JSON serialisation (sort_keys=True)
+#   sys         — exit codes (0 = PASS, 1 = FAIL), path management
+#   os          — path resolution for REVIEW_PACKET.md presence check
+#   io          — TextIOWrapper for UTF-8 stdout on Windows
+#   random      — Phase 7 shuffle proof only (not in core logic)
+#
+# Per spec (§IMPORTANT ARCHITECTURAL CONSTRAINTS):
+#   No Kafka · No RabbitMQ · No databases · No networking · No async

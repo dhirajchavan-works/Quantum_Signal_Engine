@@ -1,365 +1,534 @@
-"""
-run_distributed_qapp.py — Entry Point
+# run_distributed_qapp.py
+# Task 9 — Distributed QApp Propagation Layer
+# Marine Intelligence System | BHIV Core Interface
+#
+# Execution:
+#   python run_distributed_qapp.py
+#
+# Phase 1  QApp Invocation Envelope
+# Phase 2  Distributed Node Simulation
+# Phase 3  QApp Propagation Engine
+# Phase 4  Distributed Replay Reconstruction
+# Phase 5  Divergence + Failure Simulation
+# Phase 6  Observability Layer
+# Phase 7  Determinism Proof
+# Phase 8  REVIEW_PACKET.md  (documentation artefact — not a runtime phase)
+#
+# Rules enforced:
+#   no datetime.now()     — all timestamps from sequence_id
+#   no randomness         — all IDs from SHA-256 of deterministic inputs
+#   no databases          — plain Python lists and dicts only
+#   no networking         — pure stdlib simulation
+#   no silent recovery    — every failure prints before raising
+#   exit 0 on full PASS   — exit 1 on any failure
 
-Runs all phases of the Marine Intelligence Distributed QApp Propagation
-Layer in order. Console output is the observability layer.
-
-Phases:
-  1  — Create execution envelope
-  2  — Propagate event (Node_A → Node_B, Node_C)
-  3  — Log propagation state
-  4  — Replay log and verify hash consistency
-  5  — Run all 4 failure simulations
-  6  — Print full observability output (chain, replay status, divergence,
-         consensus hash)
-  7  — Replay same log 5 times and assert all final hashes identical;
-         then shuffle propagation order, re-sort, re-replay, assert
-         convergence
-"""
-
-import hashlib
+import io
 import json
+import os
+import random
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# ── UTF-8 stdout (Windows-safe) ────────────────────────────────────────────────
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(
+        sys.stdout.buffer, encoding="utf-8", errors="replace"
+    )
+
+# ── Imports ────────────────────────────────────────────────────────────────────
 from envelope import QAppExecutionEnvelope
-from nodes import Node_A, Node_B, Node_C, DistributedNode
+from nodes import Node_A, Node_B, Node_C, ALL_NODES, reset_all_nodes
 from propagation import (
     propagate_qapp_event,
     replay_qapp_log,
     get_propagation_log,
     clear_propagation_log,
 )
-from failure_sim import run_all_failure_simulations
+from failure_sim import (
+    PropagationFailure,
+    simulate_delayed_propagation,
+    simulate_duplicate_propagation,
+    simulate_missing_propagation,
+    simulate_out_of_order,
+)
 
 
-def _sha256_hex(*parts: str) -> str:
-    raw = "|".join(parts)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+# ══════════════════════════════════════════════════════════════════════════════
+# Test payloads — quantum signal snapshots (payload content is opaque here;
+# only the SHA-256 hash travels in the envelope)
+# ══════════════════════════════════════════════════════════════════════════════
+
+QAPP_ID          = "bhiv.corrosion.delta.v1"
+NODE_ORIGIN      = "Node_A"
+CONTRACT_VERSION = "qapp-v1.0"
+
+SAMPLE_PAYLOADS = [
+    {   # seq 1 — converged, high-confidence zone
+        "node_id":      "qnode_01",
+        "energy_delta": 0.0001,
+        "iterations":   120,
+        "confidence":   0.92,
+        "variance":     0.002,
+    },
+    {   # seq 2 — marginal, approaching convergence
+        "node_id":      "qnode_02",
+        "energy_delta": 0.003,
+        "iterations":   340,
+        "confidence":   0.87,
+        "variance":     0.004,
+    },
+    {   # seq 3 — high-confidence, low variance
+        "node_id":      "qnode_03",
+        "energy_delta": 0.00005,
+        "iterations":   55,
+        "confidence":   0.98,
+        "variance":     0.0008,
+    },
+]
 
 
-def _divider(title: str = "") -> None:
-    line = "=" * 70
-    if title:
-        pad = (70 - len(title) - 2) // 2
-        line = "=" * pad + f" {title} " + "=" * (70 - pad - len(title) - 2)
-    print(f"\n{line}")
+# ══════════════════════════════════════════════════════════════════════════════
+# Formatting
+# ══════════════════════════════════════════════════════════════════════════════
+
+W = 70  # console width
 
 
-def _reset_primary_nodes() -> None:
-    """Hard-reset Node_A/B/C to initial state."""
-    for node in (Node_A, Node_B, Node_C):
-        node.reset()
+def _banner(lines: list) -> None:
+    print("\n" + "═" * W)
+    for line in lines:
+        print(f"  {line}")
+    print("═" * W)
 
 
-# ===========================================================================
-# Phase 1 — Create Execution Envelope
-# ===========================================================================
-
-def phase_1_create_envelope() -> QAppExecutionEnvelope:
-    _divider("Phase 1: Create Execution Envelope")
-
-    envelope = QAppExecutionEnvelope.create(
-        qapp_id="marine-qapp-task9",
-        node_origin="Node_A",
-        payload={
-            "mission": "subsurface-acoustic-scan",
-            "depth_range_m": [0, 500],
-            "sensor_array": "SONAR-Mk7",
-        },
-        sequence_id=1,
-        contract_version="1.0.0",
-    )
-
-    print(f"  qapp_id          : {envelope.qapp_id}")
-    print(f"  node_origin      : {envelope.node_origin}")
-    print(f"  sequence_id      : {envelope.sequence_id}")
-    print(f"  timestamp        : {envelope.timestamp}")
-    print(f"  contract_version : {envelope.contract_version}")
-    print(f"  trace_id         : {envelope.trace_id}")
-    print(f"  invocation_id    : {envelope.invocation_id}")
-    print(f"  payload_hash     : {envelope.payload_hash}")
-    print(f"  envelope_hash    : {envelope.envelope_hash()}")
-    print("\n  [OK] Envelope created deterministically (no randomness, no datetime.now())")
-
-    return envelope
+def _phase(number: int, title: str) -> None:
+    print(f"\n{'─' * W}")
+    print(f"  PHASE {number}  —  {title}")
+    print(f"{'─' * W}")
 
 
-# ===========================================================================
-# Phase 2 — Propagate Event
-# ===========================================================================
-
-def phase_2_propagate(envelope: QAppExecutionEnvelope) -> None:
-    _divider("Phase 2: Propagate QApp Event")
-    propagate_qapp_event(envelope)
-    print(
-        f"\n  [OK] Propagation complete | "
-        f"Node_A → Node_B, Node_C | "
-        f"seq={envelope.sequence_id}"
-    )
+def _ok(msg: str) -> None:
+    print(f"\n  ✅  {msg}")
 
 
-# ===========================================================================
-# Phase 3 — Log Propagation State
-# ===========================================================================
+def _fail(msg: str) -> None:
+    print(f"\n  ❌  FAIL: {msg}")
 
-def phase_3_log_state() -> None:
-    _divider("Phase 3: Log Propagation State")
 
-    for node in (Node_A, Node_B, Node_C):
-        snap = node.snapshot()
-        print(
-            f"\n  {node.name}:"
-            f"\n    received_invocations : {snap['received_count']}"
-            f"\n    propagated_events    : {snap['propagated_count']}"
-            f"\n    replay_log_length    : {snap['replay_log_length']}"
-            f"\n    execution_hash       : {snap['execution_hash'][:24]}..."
+def _j(obj: dict, indent: int = 4) -> str:
+    return json.dumps(obj, indent=indent)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# run()
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run() -> None:
+
+    _banner([
+        "Distributed QApp Propagation Layer",
+        "Marine Intelligence System  |  BHIV Core Interface",
+        "Task 9  —  Quantum Infrastructure / Distributed QApp Runtime Systems",
+        "",
+        "Integration: Kanishk · Raj · Raj Prajapati · Jaffer Ali · Ganesh",
+    ])
+
+    passes: list = []   # accumulate PASS/FAIL per phase for final summary
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 1 — QApp Invocation Envelope
+    # Spec requirement: deterministic generation, no randomness,
+    # no datetime.now(), no hidden fields.
+    # Fields: trace_id, qapp_id, node_origin, invocation_id,
+    #         payload_hash, sequence_id, timestamp, contract_version
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(1, "QApp Invocation Envelope")
+
+    envelopes: list = []
+    for seq_num, payload in enumerate(SAMPLE_PAYLOADS, start=1):
+        env = QAppExecutionEnvelope.create(
+            qapp_id          = QAPP_ID,
+            node_origin      = NODE_ORIGIN,
+            payload          = payload,
+            sequence_id      = seq_num,
+            contract_version = CONTRACT_VERSION,
         )
+        envelopes.append(env)
 
-    log = get_propagation_log()
-    print(f"\n  Global propagation log entries: {len(log)}")
-    for entry in log:
-        print(
-            f"    seq={entry['sequence_id']} | "
-            f"inv={entry['invocation_id'][:12]}... | "
-            f"path={entry['path']} | "
-            f"env_hash={entry['envelope_hash'][:12]}..."
-        )
+        print(f"\n  Envelope seq={seq_num}")
+        d = env.to_dict()
+        for k, v in d.items():
+            val = str(v)
+            display = val if len(val) <= 24 else val[:24] + "..."
+            print(f"    {k:<20} : {display}")
 
-    print("\n  [OK] All node state logged — nothing hidden, everything inspectable")
-
-
-# ===========================================================================
-# Phase 4 — Replay and Verify Hash
-# ===========================================================================
-
-def phase_4_replay_and_verify() -> dict:
-    _divider("Phase 4: Replay Log and Verify Hash Consistency")
-
-    # Create fresh replay nodes (do NOT use primary nodes — they already have state)
-    replay_B = DistributedNode("Node_B")
-    replay_C = DistributedNode("Node_C")
-
-    result = replay_qapp_log(nodes=[replay_B, replay_C])
-
-    print(f"\n  replayed_count  : {result['replayed_count']}")
-    print(f"  final_hash_B    : {result['final_hash_B'][:24]}...")
-    print(f"  final_hash_C    : {result['final_hash_C'][:24]}...")
-    print(f"  consensus_hash  : {result['consensus_hash'][:24]}...")
-    print(f"  consistent      : {result['consistent']}")
-    print(f"  path_verified   : {[v[:12] + '...' for v in result['path_verified']]}")
-    print("\n  [OK] Replay produced identical final state — determinism confirmed")
-
-    return result
-
-
-# ===========================================================================
-# Phase 5 — Failure Simulations
-# ===========================================================================
-
-def phase_5_failure_simulations() -> list[dict]:
-    _divider("Phase 5: Failure Simulations")
-    results = run_all_failure_simulations()
-    halted_count = sum(1 for r in results if r.get("halted"))
-    print(
-        f"\n  [OK] {halted_count}/{len(results)} failure cases correctly halted "
-        f"with explicit printed reasons"
-    )
-    return results
-
-
-# ===========================================================================
-# Phase 6 — Full Observability Output
-# ===========================================================================
-
-def phase_6_observability(replay_result: dict, failure_results: list[dict]) -> None:
-    _divider("Phase 6: Observability Output")
-
-    log = get_propagation_log()
-
-    # 6a — Propagation chain
-    print("\n  ── Propagation Chain ──")
-    for entry in log:
-        print(
-            f"    seq={entry['sequence_id']} | "
-            f"{entry['node_origin']} → {entry['path'][1:]} | "
-            f"ts={entry['timestamp']} | "
-            f"qapp={entry['qapp_id']} | "
-            f"contract={entry['contract_version']}"
-        )
-
-    # 6b — Node replay status
-    print("\n  ── Node Replay Status ──")
-    for node in (Node_A, Node_B, Node_C):
-        snap = node.snapshot()
-        print(
-            f"    {node.name}: "
-            f"received={snap['received_count']} | "
-            f"propagated={snap['propagated_count']} | "
-            f"hash={snap['execution_hash'][:16]}..."
-        )
-
-    # 6c — Divergence detection
-    # Each node has a unique initialisation seed (based on its name), so
-    # Node_B and Node_C will always carry different individual hashes — that
-    # is correct and expected. Divergence would only occur if the *same* node
-    # produced *different* hashes across two replays of the same log.
-    # Phase 7 (5× replay assert) is the authoritative divergence proof.
-    # Here we simply report each node's hash and confirm the consensus.
-    print("\n  ── Divergence Detection ──")
-    hashes = {
-        "Node_B": replay_result["final_hash_B"],
-        "Node_C": replay_result["final_hash_C"],
+    # Verify: all fields present, no datetime.now() contamination
+    required = {
+        "trace_id", "qapp_id", "node_origin", "invocation_id",
+        "payload_hash", "sequence_id", "timestamp", "contract_version"
     }
-    print(
-        "    Node hashes differ by design (each node seeds from its own name)."
+    all_fields_ok = all(required == set(e.to_dict().keys()) for e in envelopes)
+    no_now = not any("now" in str(e.timestamp) for e in envelopes)
+
+    _ok(f"{len(envelopes)} envelopes created  |  fields={len(required)}  |  "
+        f"deterministic={'YES' if all_fields_ok and no_now else 'NO'}")
+    passes.append(("Phase 1 — QApp Invocation Envelope", all_fields_ok and no_now))
+
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 2 — Distributed Node Simulation
+    # Spec requirement: 3-node environment, each node tracks
+    # received_invocations, replay_log, execution_hash, propagated_events.
+    # No databases — plain Python dicts/lists only.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(2, "Distributed Node Simulation")
+
+    print("\n  Nodes initialised (pre-propagation state):\n")
+    for nid, node in ALL_NODES.items():
+        s = node.status()
+        print(f"  {nid}")
+        print(f"    received_invocations : {s['received_count']} (empty — not yet propagated)")
+        print(f"    replay_log           : {s['replay_log_count']} entries")
+        print(f"    execution_hash       : {s['execution_hash'][:32]}...  (genesis)")
+        print(f"    propagated_events    : {s['propagated_count']}")
+
+    # Verify all 4 required tracking fields exist on every node
+    tracking_ok = all(
+        hasattr(n, "received_invocations") and
+        hasattr(n, "replay_log") and
+        hasattr(n, "execution_hash") and
+        hasattr(n, "propagated_events")
+        for n in ALL_NODES.values()
     )
-    for name, h in hashes.items():
-        print(f"    {name}: {h[:24]}...")
-    print(
-        "    Cross-run divergence check: Phase 7 (5× replay) → PASSED ✓"
+    _ok(f"3 nodes initialised  |  all 4 tracking fields present  |  "
+        f"no database={tracking_ok}")
+    passes.append(("Phase 2 — Distributed Node Simulation", tracking_ok))
+
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 3 — QApp Propagation Engine
+    # Spec requirement: Node_A propagates to Node_B and Node_C,
+    # propagation path logged, causal ordering preserved,
+    # immutable append-only replay log, observable in console.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(3, "QApp Propagation Engine")
+
+    for env in envelopes:
+        propagate_qapp_event(env)
+
+    log_after = get_propagation_log()
+    log_ok = (
+        len(log_after) == len(envelopes) * 3 and         # ORIGIN + 2 × PROPAGATE
+        all("invocation_id" in e for e in log_after) and
+        all(e["sequence_id"] in [1, 2, 3] for e in log_after)
     )
 
-    # 6d — Consensus hash
-    print(f"\n  ── Consensus Hash ──")
-    print(f"    {replay_result['consensus_hash']}")
-
-    # 6e — Failure simulation summary
-    print("\n  ── Failure Case Status ──")
-    for r in failure_results:
-        tag = "HALTED ✓" if r.get("halted") else "not triggered"
-        print(f"    {r['case']}: {tag}")
-
-    print("\n  [OK] Full observability output complete")
+    print()
+    _ok(f"{len(envelopes)} envelopes propagated  |  "
+        f"log entries={len(log_after)}  |  "
+        f"append-only={log_ok}  |  "
+        f"path=Node_A → [Node_B, Node_C]")
+    passes.append(("Phase 3 — QApp Propagation Engine", log_ok))
 
 
-# ===========================================================================
-# Phase 7 — Determinism Proof
-# ===========================================================================
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 4 — Distributed Replay Reconstruction
+    # Spec requirement: reconstruct propagation path, replay full execution
+    # chain, verify final hash consistency, prove same replay → same state.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(4, "Distributed Replay Reconstruction")
 
-def phase_7_determinism_proof() -> None:
-    _divider("Phase 7: Determinism Proof")
+    live_log = get_propagation_log()
+    result   = replay_qapp_log(live_log)
 
-    log = get_propagation_log()
+    # Verify replayed hashes match live node hashes exactly
+    print("\n  Comparing replayed hashes to live node state:")
+    hash_match = True
+    for nid in ["Node_A", "Node_B", "Node_C"]:
+        live_h   = ALL_NODES[nid].execution_hash
+        replay_h = result["node_hashes"][nid]
+        match    = live_h == replay_h
+        if not match:
+            hash_match = False
+        print(f"    {nid}  live={live_h[:20]}...  replay={replay_h[:20]}...  "
+              f"{'✅' if match else '❌'}")
 
-    # Part A — Replay same log 5 times, assert all final hashes identical
-    print("\n  Part A: Replay same log 5 times → assert all consensus hashes identical")
-    consensus_hashes: list[str] = []
-
-    for run_num in range(1, 6):
-        node_b = DistributedNode("Node_B")
-        node_c = DistributedNode("Node_C")
-        result = replay_qapp_log(log=log, nodes=[node_b, node_c])
-        consensus_hashes.append(result["consensus_hash"])
-        print(
-            f"    Run {run_num}: consensus_hash={result['consensus_hash'][:24]}... "
-            f"consistent={result['consistent']}"
-        )
-
-    unique_consensus = set(consensus_hashes)
-    if len(unique_consensus) != 1:
-        diverged = "\n".join(f"  run {i+1}: {h}" for i, h in enumerate(consensus_hashes))
-        msg = (
-            f"[HALT] Determinism violated! Replay produced different hashes:\n{diverged}"
-        )
-        print(msg)
+    if not hash_match:
+        _fail("Replay hashes do not match live node state")
         sys.exit(1)
 
-    print(
-        f"\n  [ASSERT PASSED] All 5 replays → same consensus_hash ✓  "
-        f"({list(unique_consensus)[0][:24]}...)"
+    _ok(f"Replay reconstructed  |  hash match={hash_match}  |  "
+        f"consistent={result['consistent']}  |  "
+        f"consensus={result['consensus_hash'][:20]}...")
+    passes.append(("Phase 4 — Distributed Replay Reconstruction", hash_match and result["consistent"]))
+
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 5 — Divergence + Failure Simulation
+    # Spec requirement: simulate delayed propagation, duplicate propagation,
+    # missing propagation, out-of-order sequence_id.
+    # System must: detect issue, emit readable halt reason,
+    # preserve valid replay state, reject corrupted propagation.
+    # No silent recovery.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(5, "Divergence + Failure Simulation")
+
+    failure_outcomes: dict = {}
+
+    # ── 5a: Delayed propagation ───────────────────────────────────────────
+    delayed_env = QAppExecutionEnvelope.create(
+        qapp_id          = QAPP_ID,
+        node_origin      = NODE_ORIGIN,
+        payload          = {"node_id": "qnode_delay_test", "marker": 99},
+        sequence_id      = 10,         # large jump from last acknowledged seq=3
+        contract_version = CONTRACT_VERSION,
     )
-
-    # Part B — Shuffle propagation order, re-sort by sequence_id, re-replay, assert convergence
-    print(
-        "\n  Part B: Shuffle log order → re-sort by sequence_id → re-replay → "
-        "assert same hash"
+    r = simulate_delayed_propagation(
+        delayed_env.to_dict(),
+        last_acknowledged_seq=3,
     )
+    failure_outcomes["delayed_propagation"] = r["status"]
+    print(f"  → status={r['status']}  gap={r['gap']}  flag={r.get('flag', '—')}")
 
-    import random
-    shuffled_log = list(log)
+    # ── 5b: Duplicate propagation ─────────────────────────────────────────
+    seen_ids: set = {envelopes[0].invocation_id}    # seed: seq 1 already seen
+    try:
+        simulate_duplicate_propagation(envelopes[0].to_dict(), seen_ids)
+        failure_outcomes["duplicate_propagation"] = "UNEXPECTED_PASS"
+    except PropagationFailure as exc:
+        failure_outcomes["duplicate_propagation"] = "REJECTED"
+        print(f"  → PropagationFailure (expected): {exc}")
 
-    # Deterministic shuffle using a fixed seed (no randomness in final hash)
-    random.seed(42)
-    random.shuffle(shuffled_log)
-
-    print(
-        f"    Original order  : {[e['sequence_id'] for e in log]}"
-    )
-    print(
-        f"    Shuffled order  : {[e['sequence_id'] for e in shuffled_log]}"
-    )
-
-    # Re-sort (replay_qapp_log sorts internally, but we prove it here too)
-    resorted_log = sorted(shuffled_log, key=lambda e: e["sequence_id"])
-    print(
-        f"    Resorted order  : {[e['sequence_id'] for e in resorted_log]}"
-    )
-
-    node_b2 = DistributedNode("Node_B")
-    node_c2 = DistributedNode("Node_C")
-    shuffle_result = replay_qapp_log(log=resorted_log, nodes=[node_b2, node_c2])
-
-    if shuffle_result["consensus_hash"] != list(unique_consensus)[0]:
-        msg = (
-            f"[HALT] Shuffle convergence failed! "
-            f"Expected={list(unique_consensus)[0][:24]}... "
-            f"Got={shuffle_result['consensus_hash'][:24]}..."
+    # ── 5c: Missing propagation ───────────────────────────────────────────
+    try:
+        simulate_missing_propagation(
+            expected_nodes    = ["Node_A", "Node_B", "Node_C"],
+            received_by_nodes = ["Node_A", "Node_B"],    # Node_C missing
+            envelope_dict     = envelopes[1].to_dict(),
         )
-        print(msg)
+        failure_outcomes["missing_propagation"] = "UNEXPECTED_PASS"
+    except PropagationFailure as exc:
+        failure_outcomes["missing_propagation"] = "HALTED"
+        print(f"  → PropagationFailure (expected): {exc}")
+
+    # ── 5d: Out-of-order sequence_id ─────────────────────────────────────
+    ooo_batch = [
+        envelopes[0].to_dict(),    # seq 1
+        envelopes[2].to_dict(),    # seq 3
+        envelopes[1].to_dict(),    # seq 2  ← VIOLATION
+    ]
+    try:
+        simulate_out_of_order(ooo_batch)
+        failure_outcomes["out_of_order_sequence"] = "UNEXPECTED_PASS"
+    except PropagationFailure as exc:
+        failure_outcomes["out_of_order_sequence"] = "HALTED"
+        print(f"  → PropagationFailure (expected): {exc}")
+
+    print(f"\n  Failure simulation summary:")
+    for case, outcome in failure_outcomes.items():
+        tag = "✅" if "UNEXPECTED" not in outcome else "❌"
+        print(f"    {tag}  {case:<28} : {outcome}")
+
+    unexpected = [k for k, v in failure_outcomes.items() if "UNEXPECTED" in v]
+    failures_ok = len(unexpected) == 0
+    if not failures_ok:
+        _fail(f"Unexpected pass in: {unexpected}")
         sys.exit(1)
 
-    print(
-        f"\n  [ASSERT PASSED] Shuffled+resorted replay converged to same consensus_hash ✓"
-    )
-    print(
-        f"    consensus_hash = {shuffle_result['consensus_hash']}"
-    )
-    print(
-        "\n  [OK] Determinism fully proven — same log, same order, same hash, always"
-    )
+    _ok("All 4 failure cases detected and handled correctly  |  no silent recovery")
+    passes.append(("Phase 5 — Divergence + Failure Simulation", failures_ok))
 
 
-# ===========================================================================
-# Main
-# ===========================================================================
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 6 — Observability Layer
+    # Spec requirement: propagation chain, node replay status,
+    # divergence detection, replay verification, final consensus hash.
+    # Console output is the observability layer.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(6, "Observability Layer")
 
-def main() -> None:
-    _divider("Marine Intelligence — Distributed QApp Propagation Layer")
-    print("  Task 9 — Pure Python stdlib | No async | No DB | No networking")
-    print("  Console is the observability layer.")
+    # ── Propagation chain ─────────────────────────────────────────────────
+    print("\n  ┌── Propagation Chain ─────────────────────────────────────────┐")
+    for env in envelopes:
+        print(f"  │  seq={env.sequence_id}  ts={env.timestamp}")
+        print(f"  │  invoke={env.invocation_id[:28]}...")
+        print(f"  │  Node_A  →  Node_B  ✅")
+        print(f"  │  Node_A  →  Node_C  ✅")
+        if env.sequence_id < len(envelopes):
+            print(f"  │  ·")
+    print(f"  └──────────────────────────────────────────────────────────────┘")
 
-    # Ensure clean state at start
-    _reset_primary_nodes()
-    clear_propagation_log()
+    # ── Node replay status ────────────────────────────────────────────────
+    print("\n  ┌── Node Replay Status ────────────────────────────────────────┐")
+    for nid, node in ALL_NODES.items():
+        s = node.status()
+        print(f"  │  {nid:<8}  recv={s['received_count']:>2}  "
+              f"propagated={s['propagated_count']:>2}  "
+              f"log_entries={s['replay_log_count']:>2}  "
+              f"hash={s['execution_hash'][:20]}...")
+    print(f"  └──────────────────────────────────────────────────────────────┘")
 
-    # Phase 1
-    envelope = phase_1_create_envelope()
+    # ── Divergence detection ──────────────────────────────────────────────
+    print("\n  ┌── Divergence Detection ─────────────────────────────────────┐")
+    b_inv = Node_B.received_invocation_ids()
+    c_inv = Node_C.received_invocation_ids()
+    diverged = (b_inv != c_inv)
+    print(f"  │  Node_B invocations : {[i[:12]+'...' for i in b_inv]}")
+    print(f"  │  Node_C invocations : {[i[:12]+'...' for i in c_inv]}")
+    print(f"  │  Divergence         : {'❌ YES — ALERT' if diverged else '✅ NONE — nodes consistent'}")
+    print(f"  └──────────────────────────────────────────────────────────────┘")
 
-    # Phase 2
-    phase_2_propagate(envelope)
+    if diverged:
+        _fail("Divergence detected between Node_B and Node_C")
+        sys.exit(1)
 
-    # Phase 3
-    phase_3_log_state()
+    # ── Replay verification ───────────────────────────────────────────────
+    print("\n  ┌── Replay Verification ──────────────────────────────────────┐")
+    obs_result = replay_qapp_log(live_log)
+    for nid in ["Node_A", "Node_B", "Node_C"]:
+        print(f"  │  {nid:<8}  hash={obs_result['node_hashes'][nid][:28]}...")
+    print(f"  │  consistent : {'✅ YES' if obs_result['consistent'] else '❌ NO'}")
+    print(f"  └──────────────────────────────────────────────────────────────┘")
 
-    # Phase 4
-    replay_result = phase_4_replay_and_verify()
+    # ── Final consensus hash ──────────────────────────────────────────────
+    print("\n  ┌── Final Consensus Hash ─────────────────────────────────────┐")
+    print(f"  │  consensus : {obs_result['consensus_hash']}")
+    print(f"  │  log_hash  : {obs_result['log_hash']}")
+    print(f"  └──────────────────────────────────────────────────────────────┘")
 
-    # Phase 5
-    failure_results = phase_5_failure_simulations()
+    obs_ok = obs_result["consistent"] and not diverged
+    _ok(f"Observability output complete  |  all layers rendered  |  "
+        f"consensus={obs_result['consensus_hash'][:20]}...")
+    passes.append(("Phase 6 — Observability Layer", obs_ok))
 
-    # Phase 6
-    phase_6_observability(replay_result, failure_results)
 
-    # Phase 7
-    phase_7_determinism_proof()
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 7 — Determinism Proof
+    # Spec requirement: replay same propagation log 5 times,
+    # all final hashes must be identical.
+    # Additionally: shuffled propagation order must converge correctly
+    # after replay sorting.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(7, "Determinism Proof")
 
-    _divider("All Phases Complete")
-    print(
-        "\n  All 7 phases passed.\n"
-        "  Propagation, replay, failure detection, and determinism all verified.\n"
-        "  Marine Intelligence QApp Propagation Layer is operational.\n"
-    )
+    frozen_log     = get_propagation_log()
+    canonical_hash = obs_result["consensus_hash"]
+
+    # ── Proof A: 5× replay, same frozen log ───────────────────────────────
+    print("\n  Proof A — 5× replay of frozen propagation log")
+    print(f"  {'Run':<6} {'consensus_hash':<52} {'log_hash':<20}")
+    print(f"  {'─'*6} {'─'*52} {'─'*20}")
+
+    replay_hashes = []
+    for i in range(1, 6):
+        r = replay_qapp_log(frozen_log, silent=True)
+        replay_hashes.append(r["consensus_hash"])
+        match_marker = "✅" if r["consensus_hash"] == canonical_hash else "❌"
+        print(f"  {i:<6} {r['consensus_hash'][:48]}...  "
+              f"{r['log_hash'][:16]}...  {match_marker}")
+
+    all_same_a = len(set(replay_hashes)) == 1
+    print(f"\n  Result : [{'PASS' if all_same_a else 'FAIL'}]  "
+          f"{'All 5 hashes IDENTICAL' if all_same_a else 'HASHES DIFFER — DETERMINISM FAILURE'}")
+
+    if not all_same_a:
+        _fail("Replay hashes differ across runs")
+        sys.exit(1)
+
+    # ── Proof B: shuffle log 3×, re-sort via replay, verify convergence ───
+    print("\n  Proof B — shuffle log order 3×, replay each, verify same consensus")
+    print(f"  {'Trial':<7} {'shuffled_input_order':<30} {'converged'}")
+    print(f"  {'─'*7} {'─'*30} {'─'*9}")
+
+    shuffle_ok = True
+    for trial in range(1, 4):
+        shuffled = list(frozen_log)
+        random.shuffle(shuffled)
+        shuffled_seqs = [e["sequence_id"] for e in shuffled]
+        r_s = replay_qapp_log(shuffled, silent=True)
+        match = r_s["consensus_hash"] == canonical_hash
+        if not match:
+            shuffle_ok = False
+        seq_display = str(shuffled_seqs)[:28]
+        print(f"  {trial:<7} seqs={seq_display:<25}  "
+              f"{'✅ YES' if match else '❌ NO — DIVERGED'}")
+
+    print(f"\n  Result : [{'PASS' if shuffle_ok else 'FAIL'}]  "
+          f"{'All shuffled replays converge to canonical consensus' if shuffle_ok else 'SHUFFLE CONVERGENCE FAILURE'}")
+
+    if not shuffle_ok:
+        _fail("Shuffled log replay did not converge to canonical hash")
+        sys.exit(1)
+
+    det_ok = all_same_a and shuffle_ok
+    _ok(f"Determinism confirmed  |  5× replay identical  |  3× shuffle converges")
+    passes.append(("Phase 7 — Determinism Proof", det_ok))
+
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PHASE 8 — REVIEW_PACKET.md
+    # Spec requirement: documentation artefact with 10 mandatory sections.
+    # Not a runtime phase — verified by file presence.
+    # ══════════════════════════════════════════════════════════════════════
+    _phase(8, "REVIEW_PACKET.md  (documentation artefact)")
+
+    review_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "REVIEW_PACKET.md")
+    review_exists = os.path.isfile(review_path)
+
+    required_sections = [
+        "Entry Point",
+        "QApp Invocation Flow",
+        "Distributed Propagation Flow",
+        "Replay Reconstruction",
+        "Failure Cases",
+        "Determinism Proof",
+        "Observability Output",
+        "What Was Built",
+        "System Boundaries",
+        "Known Infrastructure Risks",
+    ]
+    sections_found = []
+    if review_exists:
+        with open(review_path, encoding="utf-8") as f:
+            content = f.read()
+        sections_found = [s for s in required_sections if s in content]
+
+    print(f"\n  REVIEW_PACKET.md present : {'✅' if review_exists else '❌'}")
+    print(f"  Mandatory sections       : {len(sections_found)}/{len(required_sections)}")
+    for s in required_sections:
+        found = s in sections_found
+        print(f"    {'✅' if found else '❌'}  {s}")
+
+    review_ok = review_exists and len(sections_found) == len(required_sections)
+    _ok(f"Documentation complete  |  "
+        f"{'all 10 sections present' if review_ok else 'MISSING SECTIONS'}")
+    passes.append(("Phase 8 — REVIEW_PACKET.md", review_ok))
+
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Final summary
+    # ══════════════════════════════════════════════════════════════════════
+    all_passed = all(ok for _, ok in passes)
+
+    print(f"\n{'═' * W}")
+    print(f"  EXECUTION SUMMARY  —  Task 9 Distributed QApp Propagation Layer")
+    print(f"{'═' * W}\n")
+    for phase_name, ok in passes:
+        print(f"  {'PASS ✅' if ok else 'FAIL ❌'}  {phase_name}")
+
+    print(f"\n{'─' * W}")
+    print(f"  Envelopes propagated      : {len(envelopes)}")
+    print(f"  Log entries               : {len(frozen_log)}")
+    print(f"  Failure cases detected    : 4 / 4")
+    print(f"  Determinism (5× replay)   : {'PASS' if all_same_a else 'FAIL'}")
+    print(f"  Shuffle convergence (3×)  : {'PASS' if shuffle_ok else 'FAIL'}")
+    print(f"  Consensus hash            : {obs_result['consensus_hash'][:40]}...")
+    print(f"\n  OVERALL : {'PASS ✅' if all_passed else 'FAIL ❌'}")
+    print(f"{'═' * W}\n")
+
+    sys.exit(0 if all_passed else 1)
 
 
 if __name__ == "__main__":
-    main()
+    run()

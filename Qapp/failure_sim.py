@@ -1,294 +1,292 @@
-"""
-failure_sim.py — Failure Simulation for Distributed QApp Propagation
-
-Simulates four realistic failure modes that can occur in a distributed
-quantum pipeline. Each case:
-  - Detects the issue explicitly
-  - Prints a readable halt reason to console
-  - Preserves the valid replay state already committed
-  - Rejects the corrupted propagation (never silently recovers)
-
-No silent recovery. No hidden state. Console is the observability layer.
-"""
+# failure_sim.py
+# Failure simulation for the distributed QApp propagation layer.
+#
+# 4 cases:
+#   1. Delayed propagation       — causal gap exceeds threshold; accepted with flag
+#   2. Duplicate propagation     — same invocation_id seen twice; rejected hard
+#   3. Missing propagation       — node never received the envelope; consensus fails
+#   4. Out-of-order sequence_id  — non-monotonic sequence; halts until reordered
+#
+# Rules:
+#   Every failure prints a readable halt reason before raising or returning.
+#   Valid replay state is always preserved — corrupted state is always rejected.
+#   No silent recovery.  No swallowed exceptions.  No automatic retry.
+#
+# This module has NO imports from other local files — fully standalone.
 
 import hashlib
 import json
-from typing import Any
-
-from envelope import QAppExecutionEnvelope
-from nodes import DistributedNode
 
 
-def _sha256_hex(*parts: str) -> str:
-    raw = "|".join(parts)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+# ── Utilities ──────────────────────────────────────────────────────────────────
+
+def _sha256(data: str) -> str:
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
-def _fresh_node(name: str) -> DistributedNode:
-    """Create a fresh isolated node for a simulation run."""
-    return DistributedNode(name)
+# ── Exception ─────────────────────────────────────────────────────────────────
+
+class PropagationFailure(Exception):
+    """
+    Raised when a propagation failure cannot be automatically resolved.
+
+    Callers MUST catch this.  It is never raised silently — the reason is
+    always printed to console before the exception is raised.
+    """
+    pass
 
 
-def _make_envelope(seq: int, qapp_id: str = "marine-qapp-sim") -> QAppExecutionEnvelope:
-    return QAppExecutionEnvelope.create(
-        qapp_id=qapp_id,
-        node_origin="Node_A",
-        payload={"mission": "subsurface-scan", "seq": seq},
-        sequence_id=seq,
-        contract_version="1.0.0",
-    )
+# ── Console formatting ─────────────────────────────────────────────────────────
+
+def _header(case_num: int, name: str) -> None:
+    print(f"\n  ┌─ Failure Case {case_num}: {name}")
 
 
-# ---------------------------------------------------------------------------
+def _halt(reason: str) -> None:
+    """Print a structured halt notice.  Caller raises PropagationFailure next."""
+    print(f"  │  ❌ HALT  : {reason}")
+    print(f"  │  Action  : Propagation REJECTED. Replay state preserved.")
+    print(f"  └──────────────────────────────────────────────────────────")
+
+
+def _accept_flagged(msg: str) -> None:
+    """Print an accept-with-flag notice.  No exception raised."""
+    print(f"  │  ⚠️  FLAG  : {msg}")
+    print(f"  │  Action  : Accepted with causal delay flag. Logged for audit.")
+    print(f"  └──────────────────────────────────────────────────────────")
+
+
+def _ok(msg: str) -> None:
+    """Print a clean-pass notice (used in non-failing legs of each case)."""
+    print(f"  │  ✅ OK    : {msg}")
+    print(f"  └──────────────────────────────────────────────────────────")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Case 1 — Delayed Propagation
-# ---------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 
-def simulate_delayed_propagation() -> dict:
+DELAY_THRESHOLD = 3   # max tolerable gap in sequence_ids before flagging
+
+
+def simulate_delayed_propagation(
+    envelope_dict: dict,
+    last_acknowledged_seq: int,
+) -> dict:
     """
-    Scenario: Node_B receives seq=1, but seq=2 arrives after a delay
-    (simulated by inserting a gap marker). The node detects the gap in
-    causal ordering and halts rather than silently accepting out-of-sequence
-    state.
+    Detect when an envelope arrives with a large sequence_id gap relative
+    to the last acknowledged envelope on this node.
 
-    Detection rule: each node tracks the highest accepted sequence_id.
-    A new envelope with sequence_id > expected_next triggers a DELAY HALT.
+    Policy:
+        gap <= DELAY_THRESHOLD  → accepted normally (no flag)
+        gap >  DELAY_THRESHOLD  → accepted with CAUSAL_DELAY flag
+        (delayed-but-valid data should be logged, not silently dropped)
+
+    The flag is embedded in the return dict so callers can log it to the
+    replay audit trail.  No exception is raised.
+
+    Args:
+        envelope_dict:          Envelope being evaluated.
+        last_acknowledged_seq:  Last sequence_id this node confirmed receipt of.
+
+    Returns:
+        dict with status, invocation_id, sequence_id, gap, [flag], accepted.
     """
-    print("\n" + "=" * 60)
-    print("[FAILURE SIM] Case 1: Delayed Propagation")
-    print("=" * 60)
+    _header(1, "Delayed Propagation")
 
-    node = _fresh_node("Node_B_delayed")
-    env_seq1 = _make_envelope(seq=1)
-    env_seq3 = _make_envelope(seq=3)   # seq=2 is missing (delayed)
+    current_seq = envelope_dict["sequence_id"]
+    # gap = number of sequence steps skipped (0 = consecutive, fine)
+    gap = current_seq - last_acknowledged_seq - 1
 
-    node.receive(env_seq1.to_dict(), from_node="Node_A")
-    print(f"  [OK]   seq=1 received and accepted by {node.name}")
-
-    # Simulate delayed arrival: seq=3 arrives before seq=2
-    expected_next = len(node.received_invocations) + 1   # = 2
-    incoming_seq = env_seq3.sequence_id                   # = 3
-
-    if incoming_seq > expected_next:
-        halt_reason = (
-            f"[HALT] Delayed propagation detected on {node.name}. "
-            f"Expected seq={expected_next}, received seq={incoming_seq}. "
-            f"seq={expected_next} has not yet arrived. "
-            f"Propagation of seq={incoming_seq} rejected. "
-            f"Replay state preserved up to seq={len(node.received_invocations)}."
+    if gap > DELAY_THRESHOLD:
+        _accept_flagged(
+            f"seq={current_seq} arrived after seq={last_acknowledged_seq}. "
+            f"Gap={gap} steps (threshold={DELAY_THRESHOLD}). "
+            f"Invocation {envelope_dict['invocation_id'][:16]}... "
+            f"accepted with flag=CAUSAL_DELAY."
         )
-        print(f"  {halt_reason}")
         return {
-            "case": "delayed_propagation",
-            "halted": True,
-            "reason": halt_reason,
-            "preserved_up_to_seq": len(node.received_invocations),
-            "node_hash": node.execution_hash,
+            "status":        "DELAYED",
+            "invocation_id": envelope_dict["invocation_id"],
+            "sequence_id":   current_seq,
+            "gap":           gap,
+            "flag":          "CAUSAL_DELAY",
+            "accepted":      True,
         }
 
-    # Should never reach here in this simulation
-    node.receive(env_seq3.to_dict(), from_node="Node_A")
-    return {"case": "delayed_propagation", "halted": False}
-
-
-# ---------------------------------------------------------------------------
-# Case 2 — Duplicate Propagation
-# ---------------------------------------------------------------------------
-
-def simulate_duplicate_propagation() -> dict:
-    """
-    Scenario: The same envelope (same invocation_id) is delivered twice
-    to Node_B. The node detects the duplicate and rejects the second
-    delivery without altering already-committed state.
-
-    Detection rule: invocation_id already present in received_invocations.
-    """
-    print("\n" + "=" * 60)
-    print("[FAILURE SIM] Case 2: Duplicate Propagation")
-    print("=" * 60)
-
-    node = _fresh_node("Node_B_dup")
-    env = _make_envelope(seq=1)
-    env_dict = env.to_dict()
-
-    node.receive(env_dict, from_node="Node_A")
-    print(f"  [OK]   seq=1 received first time by {node.name}")
-
-    hash_after_first = node.execution_hash
-
-    # Attempt to deliver the same envelope again
-    already_seen = any(
-        r["invocation_id"] == env_dict["invocation_id"]
-        for r in node.received_invocations
+    # Normal arrival — no issue.
+    _ok(
+        f"seq={current_seq}, gap={gap} within threshold={DELAY_THRESHOLD}. "
+        f"No delay detected."
     )
-
-    if already_seen:
-        halt_reason = (
-            f"[HALT] Duplicate propagation detected on {node.name}. "
-            f"invocation_id={env_dict['invocation_id'][:12]}... already committed. "
-            f"Duplicate delivery rejected. "
-            f"Replay state unchanged. "
-            f"execution_hash preserved: {hash_after_first[:12]}..."
-        )
-        print(f"  {halt_reason}")
-        assert node.execution_hash == hash_after_first, (
-            "Execution hash must not change on rejected duplicate."
-        )
-        return {
-            "case": "duplicate_propagation",
-            "halted": True,
-            "reason": halt_reason,
-            "node_hash": node.execution_hash,
-            "hash_unchanged": node.execution_hash == hash_after_first,
-        }
-
-    node.receive(env_dict, from_node="Node_A")
-    return {"case": "duplicate_propagation", "halted": False}
-
-
-# ---------------------------------------------------------------------------
-# Case 3 — Missing Propagation
-# ---------------------------------------------------------------------------
-
-def simulate_missing_propagation() -> dict:
-    """
-    Scenario: Node_C never receives seq=2, but a replay is attempted over
-    all three sequences. The replay detects the missing entry in the log
-    and halts rather than producing a partial hash.
-
-    Detection rule: the replay log claims to have 3 entries, but only
-    seq=1 and seq=3 are present (seq=2 is absent / lost in transit).
-    """
-    print("\n" + "=" * 60)
-    print("[FAILURE SIM] Case 3: Missing Propagation")
-    print("=" * 60)
-
-    env1 = _make_envelope(seq=1)
-    env2 = _make_envelope(seq=2)   # this will not be delivered
-    env3 = _make_envelope(seq=3)
-
-    # Simulate log that claims continuity but is missing seq=2
-    incomplete_log: list[dict] = [
-        {**env1.to_dict(), "envelope_hash": env1.envelope_hash(), "phase": "propagation", "path": ["Node_A", "Node_C"]},
-        # env2 is intentionally absent
-        {**env3.to_dict(), "envelope_hash": env3.envelope_hash(), "phase": "propagation", "path": ["Node_A", "Node_C"]},
-    ]
-
-    declared_total = 3   # the system claims 3 envelopes were propagated
-    actual_in_log = len(incomplete_log)
-
-    print(
-        f"  Declared total envelopes: {declared_total} | "
-        f"Present in log: {actual_in_log}"
-    )
-
-    if actual_in_log < declared_total:
-        halt_reason = (
-            f"[HALT] Missing propagation detected. "
-            f"Log declares {declared_total} envelopes but only {actual_in_log} present. "
-            f"seq=2 is absent. "
-            f"Replay aborted — partial replay would produce a non-canonical hash. "
-            f"System must recover seq=2 before replay can proceed."
-        )
-        print(f"  {halt_reason}")
-        return {
-            "case": "missing_propagation",
-            "halted": True,
-            "reason": halt_reason,
-            "declared_total": declared_total,
-            "actual_in_log": actual_in_log,
-            "missing_seqs": [2],
-        }
-
-    return {"case": "missing_propagation", "halted": False}
-
-
-# ---------------------------------------------------------------------------
-# Case 4 — Out-of-Order sequence_id
-# ---------------------------------------------------------------------------
-
-def simulate_out_of_order_propagation() -> dict:
-    """
-    Scenario: Envelopes arrive at Node_B in the wrong causal order
-    (seq=3 before seq=1 before seq=2). The node detects the ordering
-    violation and halts immediately, preserving the last known good state.
-
-    Detection rule: incoming sequence_id is less than the highest already
-    accepted sequence_id (a strict monotonic ordering constraint).
-    """
-    print("\n" + "=" * 60)
-    print("[FAILURE SIM] Case 4: Out-of-Order sequence_id")
-    print("=" * 60)
-
-    node = _fresh_node("Node_B_ooo")
-
-    # Deliver envelopes in wrong order: 3, 1, 2
-    arrival_order = [3, 1, 2]
-    envelopes = {s: _make_envelope(seq=s) for s in [1, 2, 3]}
-
-    highest_accepted: int = 0
-    result: dict[str, Any] = {
-        "case": "out_of_order_propagation",
-        "halted": False,
-        "accepted_sequences": [],
-        "node_hash": "",
+    return {
+        "status":        "OK",
+        "invocation_id": envelope_dict["invocation_id"],
+        "sequence_id":   current_seq,
+        "gap":           gap,
+        "accepted":      True,
     }
 
-    for seq in arrival_order:
-        env_dict = envelopes[seq].to_dict()
 
-        if seq <= highest_accepted:
-            halt_reason = (
-                f"[HALT] Out-of-order propagation detected on {node.name}. "
-                f"Received seq={seq} but highest accepted is seq={highest_accepted}. "
-                f"Causal ordering violated. "
-                f"Envelope seq={seq} rejected. "
-                f"Replay state preserved through seq={highest_accepted}."
-            )
-            print(f"  {halt_reason}")
-            result["halted"] = True
-            result["reason"] = halt_reason
-            result["node_hash"] = node.execution_hash
-            result["violated_at_seq"] = seq
-            result["highest_accepted"] = highest_accepted
-            return result
+# ══════════════════════════════════════════════════════════════════════════════
+# Case 2 — Duplicate Propagation
+# ══════════════════════════════════════════════════════════════════════════════
 
-        # Accept in-order arrival
-        node.receive(env_dict, from_node="Node_A")
-        highest_accepted = seq
-        print(
-            f"  [OK]   seq={seq} accepted by {node.name} | "
-            f"hash={node.execution_hash[:12]}..."
+def simulate_duplicate_propagation(
+    envelope_dict: dict,
+    seen_invocations: set,
+) -> dict:
+    """
+    Detect and hard-reject duplicate invocation_ids.
+
+    An invocation_id is the SHA-256 of (trace_id, payload_hash, sequence_id).
+    If the same ID appears twice, this is either:
+        - A network re-delivery (must be idempotent-rejected, not re-applied)
+        - A replay attack
+        - A bug in the origin node
+
+    In all cases: REJECT.  Replay log is NOT modified.
+    The seen_invocations set is NOT modified either (already has the ID).
+
+    Args:
+        envelope_dict:      Envelope being evaluated.
+        seen_invocations:   Mutable set maintained by the caller.  Updated on
+                            first receipt; untouched on duplicate.
+
+    Returns:
+        dict with status and invocation_id on clean pass.
+
+    Raises:
+        PropagationFailure  on duplicate.
+    """
+    _header(2, "Duplicate Propagation")
+
+    inv_id = envelope_dict["invocation_id"]
+
+    if inv_id in seen_invocations:
+        reason = (
+            f"invocation_id={inv_id[:24]}... "
+            f"is already present in the propagation log. "
+            f"Idempotency violation detected. "
+            f"Replay log UNCHANGED. Duplicate discarded."
         )
-        result["accepted_sequences"].append(seq)
+        _halt(reason)
+        raise PropagationFailure(f"Duplicate invocation: {inv_id[:24]}...")
 
-    result["node_hash"] = node.execution_hash
-    return result
+    seen_invocations.add(inv_id)
+    _ok(f"invocation_id={inv_id[:24]}... is new. Added to seen set. Accepted.")
+    return {"status": "OK", "invocation_id": inv_id}
 
 
-# ---------------------------------------------------------------------------
-# Runner — execute all four failure simulations
-# ---------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
+# Case 3 — Missing Propagation
+# ══════════════════════════════════════════════════════════════════════════════
 
-def run_all_failure_simulations() -> list[dict]:
+def simulate_missing_propagation(
+    expected_nodes: list,
+    received_by_nodes: list,
+    envelope_dict: dict,
+) -> dict:
     """
-    Execute all four failure simulations in order.
-    Returns a list of result dicts (one per case).
-    All cases that detect a failure will have halted=True.
+    Detect when one or more expected downstream nodes never received an envelope.
+
+    Consensus in this 3-node system requires all nodes to hold the same
+    invocations.  If any node is missing a delivery, the consensus hash will
+    diverge — and no autonomous action can be taken.
+
+    Policy:
+        All expected nodes received it  → OK
+        One or more missing             → HALT.  PropagationFailure raised.
+
+    The valid partial state (nodes that DID receive it) is preserved.
+    The missing nodes' states are left unchanged and flagged.
+
+    Args:
+        expected_nodes:     All nodes that should have received the envelope.
+        received_by_nodes:  Nodes confirmed to have received it.
+        envelope_dict:      The envelope in question.
+
+    Returns:
+        dict with status on clean pass.
+
+    Raises:
+        PropagationFailure  if any expected node is missing.
     """
-    print("\n" + "=" * 60)
-    print("[FAILURE SIM] Running all 4 failure simulation cases")
-    print("=" * 60)
+    _header(3, "Missing Propagation")
 
-    results = [
-        simulate_delayed_propagation(),
-        simulate_duplicate_propagation(),
-        simulate_missing_propagation(),
-        simulate_out_of_order_propagation(),
-    ]
+    missing = sorted(set(expected_nodes) - set(received_by_nodes))
 
-    print("\n[FAILURE SIM] ── Summary ──")
-    for r in results:
-        status = "HALTED ✓" if r.get("halted") else "PASSED (no failure triggered)"
-        print(f"  {r['case']}: {status}")
+    if missing:
+        reason = (
+            f"invocation_id={envelope_dict['invocation_id'][:24]}... "
+            f"was NOT delivered to: {missing}. "
+            f"Full consensus requires all nodes to receive every envelope. "
+            f"Nodes that received it: {sorted(received_by_nodes)}. "
+            f"Their replay states are preserved and valid. "
+            f"Consensus CANNOT be reached until gap is resolved."
+        )
+        _halt(reason)
+        raise PropagationFailure(
+            f"Missing propagation to {missing} for "
+            f"invocation {envelope_dict['invocation_id'][:24]}..."
+        )
 
-    return results
+    _ok(
+        f"All expected nodes received invocation "
+        f"{envelope_dict['invocation_id'][:24]}...: {expected_nodes}"
+    )
+    return {"status": "OK", "received_by": received_by_nodes}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Case 4 — Out-of-Order Sequence ID
+# ══════════════════════════════════════════════════════════════════════════════
+
+def simulate_out_of_order(envelopes: list) -> dict:
+    """
+    Detect non-monotonic sequence_ids in a batch of envelopes.
+
+    Sequence IDs must be strictly increasing.  A lower-or-equal ID arriving
+    after a higher one signals a causal ordering violation — the dependent
+    computation cannot be applied before its dependencies.
+
+    Processing halts at the first violation.  The caller must reorder the
+    batch and re-submit before any envelope in the batch can be applied.
+
+    Note:
+        replay_qapp_log() automatically sorts by sequence_id before replaying,
+        so a shuffled LOG is safe to replay.  This case covers the scenario
+        where an upstream router delivers envelopes in wrong order and the
+        receiving node must detect the problem before applying them.
+
+    Args:
+        envelopes:  List of envelope dicts to validate.
+
+    Returns:
+        dict with status and order on clean pass.
+
+    Raises:
+        PropagationFailure  at the first out-of-order entry.
+    """
+    _header(4, "Out-of-Order Sequence ID")
+
+    ids = [e["sequence_id"] for e in envelopes]
+
+    for i in range(1, len(ids)):
+        if ids[i] <= ids[i - 1]:
+            reason = (
+                f"sequence_id={ids[i]} at position {i} is not greater than "
+                f"previous sequence_id={ids[i - 1]} at position {i - 1}. "
+                f"Causal ordering VIOLATED. "
+                f"Downstream computation depends on earlier sequences being applied first. "
+                f"Batch processing HALTED at position {i}. "
+                f"Reorder and re-submit before any entry in this batch can proceed."
+            )
+            _halt(reason)
+            raise PropagationFailure(
+                f"Out-of-order at index {i}: "
+                f"seq={ids[i]} arrived after seq={ids[i - 1]}"
+            )
+
+    _ok(f"All {len(ids)} sequence_ids are strictly monotonic: {ids}")
+    return {"status": "OK", "order": ids}

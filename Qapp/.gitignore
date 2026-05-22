@@ -1,0 +1,61 @@
+# .gitignore
+# Task 9 — Distributed QApp Propagation Layer
+
+# ── Python cache ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environments ───────────────────────────────────────
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ── Distribution / packaging ───────────────────────────────────
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+MANIFEST
+
+# ── Testing and coverage ───────────────────────────────────────
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ── IDEs ───────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Logs and outputs ───────────────────────────────────────────
+*.log
+*.out
+*.tmp
+
+# ── OS artefacts ───────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
