@@ -1,417 +1,580 @@
-# quantum-signal-engine
+# Marine Intelligence System — Quantum Stack
+## BHIV Core | Tasks 1–9 | Full Pipeline
 
-Quantum node state signal generator integrated with Kanishk's deterministic physical
-execution engine — now extended with a real quantum computation pipeline (Task 8).
+**Author:** Dhiraj Chavan · Marine Intelligence System
+**Product Lane:** Quantum Infrastructure / Distributed QApp Runtime Systems
+**Period:** 2026
 
-**Marine Intelligence System | BHIV Core Ready**
+---
+
+> **What this repository proves:**
+> A quantum-assisted digital twin for ship hull degradation — built from
+> first principles. Physics-based corrosion modelling, deterministic VQE
+> computation, governed callable interface, and finally a distributed
+> infrastructure participant with replay-safe propagation and observable
+> consensus across three nodes.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Tasks 1–5: single-event pipeline
+# Tasks 1–4
 python run_signal.py
 
-# Task 6: multi-event batch pipeline
-python run_multi_event.py
-
-# Task 7: purified signal contract (external invocation)
-python invoke_signal.py
-
-# Task 8: quantum execution pipeline  ← NEW
-python run_quantum_pipeline.py
+# Task 9
+python run_distributed_qapp.py
 ```
 
-No arguments. No external dependencies beyond Qiskit (Task 8 only). Python 3.8+.
+**Requirements:** Python 3.8+ · No pip installs · No external dependencies
+**Exit codes:** `0` = PASS · `1` = FAIL (reason printed before exit)
 
 ---
 
 ## Repository Structure
 
 ```
-quantum-signal-engine/
+marine-intelligence-quantum-stack/
 │
-├── run_signal.py               ← Tasks 1–5 entry point
-├── run_multi_event.py          ← Task 6 entry point
-├── invoke_signal.py            ← Task 7 external invocation demo
-├── run_quantum_pipeline.py     ← Task 8 entry point  ← NEW
-│
+├── run_signal.py                    ← Tasks 1–4 entry point
 ├── src/
-│   ├── signal_generator.py     ← generate_signal() + SequenceRegistry
-│   ├── mapping_logic.py        ← deterministic state transition rules
-│   ├── validator.py            ← schema validation + validate_contract()
-│   ├── signal_adapter.py       ← abstraction boundary: signal → execution
-│   ├── execution_engine.py     ← Kanishk's engine wrapper
-│   ├── integration_runner.py   ← single-event direct bridge
-│   └── multi_event_runner.py   ← process_event_batch() — BHIV Core entry point
+│   ├── signal_generator.py          ← generate_state_event() callable
+│   ├── mapping_logic.py             ← deterministic state transition engine
+│   └── validator.py                 ← schema validation + failure checks
 │
-├── physical_engine/            ← Kanishk's deterministic engine (sealed)
-│   ├── __init__.py
-│   ├── ship_state_vector.py    ← ShipState, ShipStateVector
-│   ├── transition_engine.py    ← TransitionInput, DeterministicTransitionEngine
-│   ├── multi_zone_executor.py  ← MultiZoneExecutor
-│   ├── execution_interface_v2.py ← PhysicalExecutionHub (distributed)
-│   ├── latency_ordering.py     ← CausalOrderingPolicy, DelayedInputQueue
-│   ├── observability.py        ← ObservabilityCollector, SystemMetrics
-│   ├── dhiraj_integration.py   ← SimulationOutput contract + adapter
-│   └── full_execution_trace.py ← end-to-end determinism proof
+├── run_distributed_qapp.py          ← Task 9 entry point
+├── envelope.py                      ← Phase 1: QAppExecutionEnvelope
+├── nodes.py                         ← Phase 2: Node_A, Node_B, Node_C
+├── propagation.py                   ← Phase 3+4: engine + replay
+├── failure_sim.py                   ← Phase 5: 4 failure simulators
 │
-├── qapps/                      ← NEW (Task 8)
-│   └── marine_corrosion_qapp/
-│       ├── README.md
-│       ├── algorithm.py        ← VQE/QAOA quantum algorithm implementation
-│       ├── execution.py        ← quantum circuit execution + shot management
-│       ├── schema.py           ← structured quantum output schema
-│       └── contract.md         ← quantum → classical boundary contract
+├── review_packets/
+│   ├── task_1_review.md
+│   ├── task_2_review.md
+│   ├── task_3_review.md
+│   └── task_4_review.md
 │
-├── review_packets_/
-│   ├── task_1_review.md        ← Digital Twin Definition
-│   ├── task_2_review.md        ← Quantum Parameter Engine
-│   ├── task_3_review.md        ← Signal Generator Design
-│   ├── task_4_review.md        ← BHIV Core Interface Preparation
-│   ├── task_5_review.md        ← Signal → Execution → Observable State
-│   ├── Task_6_review.md        ← Multi-Event Deterministic Execution
-│   ├── task_7_signal_purification.md ← Signal Purification + Core Contract
-│   └── task_8_quantum_pipeline.md    ← Quantum Execution Pipeline  ← NEW
-│
-└── requirements.txt
+├── REVIEW_PACKET.md                 ← Task 9: 10-section design review
+├── TESTING_PACKET.md                ← Task 9: BHIV Universal Testing Protocol v2
+├── requirements.txt                 ← stdlib only — no pip installs
+├── .gitignore
+└── README.md                        ← this file
 ```
 
 ---
 
-## System Architecture
+## Pipeline Overview
 
-### Tasks 1–7: Signal → Physical Execution Pipeline
-
-```
-Input Payload (quantum node snapshot)
-    ↓
-src/signal_generator.py         generate_signal()
-    ↓   validate → map → build event → validate
-src/signal_adapter.py           ← ONLY crossing point between layers
-    ↓   adapt_event_to_transition()
-src/execution_engine.py / multi_event_runner.py
-    ↓   MultiZoneExecutor.execute_batch()
-physical_engine/                ← Kanishk's sealed engine
-    ↓
-ShipStateVector updated (corrosion, coating, barnacle, roughness, risk_score)
-```
-
-### Task 8: Quantum Execution Pipeline  ← NEW
+Nine tasks. One progressive build. Each extends the foundation of the last.
 
 ```
-Environmental Parameters
-    ↓
-qapps/marine_corrosion_qapp/algorithm.py
-    ↓   Quantum Circuit Construction (VQE / QAOA)
-qapps/marine_corrosion_qapp/execution.py
-    ↓   Local Simulator Execution (Qiskit Aer)
-    ↓   Measurement Distribution → Classical Result
-qapps/marine_corrosion_qapp/schema.py
-    ↓   Structured QuantumExecutionResult
-    ↓   validate_quantum_contract()
-Deterministic Event (passable to BHIV Core / signal pipeline)
+Task 1  ──  Define the physical system        ship hull digital twin
+   │
+Task 2  ──  Compute quantum parameters        VQE → corrosion rate constant k
+   │
+Task 3  ──  Build the signal generator        deterministic state machine
+   │
+Task 4  ──  Harden the callable interface     BHIV Core contract
+   │
+Task 5  ──  Add contract governance           schema versioning + enforcement
+   │
+Task 6  ──  Bound the probabilistic layer     uncertainty + confidence flags
+   │
+Task 7  ──  Wrap the QApp with governance     execution authority separation
+   │
+Task 8  ──  Coordinate the hybrid runtime     quantum-classical orchestration
+   │
+Task 9  ──  Prove distributed survival        propagation · replay · consensus
 ```
+
+**Transition point:** Tasks 1–8 prove correctness of isolated execution.
+Task 9 proves the system can survive as **distributed infrastructure**.
 
 ---
 
-## Signal Layer (Tasks 1–7)
+## Task 1 — Digital Twin Definition
 
-### Public API
+**Run:** `python run_signal.py`
+**Review:** `review_packets/task_1_review.md`
 
-```python
-# Single signal
-from src.signal_generator import generate_signal
-event = generate_signal(payload)
+### Four physical processes modelled
 
-# Multi-event batch (BHIV Core entry point)
-from src.multi_event_runner import process_event_batch
-result = process_event_batch([payload_1, payload_2, payload_3])
-
-# Contract validation
-from src.validator import validate_contract
-check = validate_contract(event)   # → {"status": "PASS"} or {"status": "FAIL", "errors": [...]}
-```
-
-### Input Schema
-
-```json
-{
-  "node_id":      "qnode_01",
-  "energy_delta": 0.0001,
-  "iterations":   120,
-  "confidence":   0.92,
-  "variance":     0.002
-}
-```
-
-### Signal Output (engine_event_version 2.0)
-
-```json
-{
-  "engine_event_version": "2.0",
-  "trace_id":   "qnode_01-iter120-seq1",
-  "node_id":    "qnode_01",
-  "node_ref":   "qnode_01",
-  "transition": {
-    "prev":        "ACTIVE",
-    "next":        "CONVERGED",
-    "cause":       "confidence=0.92>=0.85, variance=0.002<=0.005, energy_delta=0.0001<=0.005",
-    "sequence_id": 1,
-    "ts":          "2026-01-01T02:00:00Z"
-  },
-  "uncertainty_envelope": {
-    "confidence": 0.92,
-    "sigma":      0.04472136
-  }
-}
-```
-
-### State Transition Rules (priority order — first match wins)
-
-| Condition | State | Meaning |
+| Process | Physics | Master driver |
 |---|---|---|
-| `energy_delta > 0.01` | DIVERGED | Energy spike — numerically unstable |
-| `iterations > 500` | DIVERGED | Runaway iteration count |
-| `confidence < 0.70` | SUSPENDED | Below confidence floor — hold |
-| `variance > 0.01` | SUSPENDED | High variance — unreliable |
-| `confidence >= 0.85` AND `variance <= 0.005` AND `energy_delta <= 0.005` | CONVERGED | All criteria met |
-| fallback | SUSPENDED | Marginal — not fully met |
+| **Corrosion** | Seawater converts Fe → Fe₂O₃ electrochemically | O₂ · salinity · temperature · coating |
+| **Biofouling** | Barnacle attachment and growth | Antifouling paint (suppresses ~90% when intact) |
+| **Coating degradation** | Mechanical erosion · UV · chemical decay | Controls every other process |
+| **Performance loss** | Drag → fuel cost (annual £ figure) | Roughness index |
 
-### Execution Policy
+### State variables per hull zone
 
-| Signal State | Action | Kanishk's Engine | Hull State |
+| Variable | Unit | Role |
+|---|---|---|
+| `corrosion_depth` | mm | Cumulative material loss |
+| `coating_thickness` | mm | Master control variable |
+| `barnacle_density` | organisms/m² | Biofouling load |
+| `flow_velocity` | m/s | Hydrodynamic shear input |
+| `roughness_index` | μm Ra | Surface drag parameter |
+| `risk_score` | 0.0–1.0 | Composite intervention indicator |
+
+**Zone model:** 50–200 rectangular zones, each updated independently.
+**Scope:** hull surface only — no propulsion, cargo, or routing.
+
+---
+
+## Task 2 — Quantum Parameter Engine + State Mapping
+
+**Run:** `python run_signal.py`
+**Review:** `review_packets/task_2_review.md`
+
+### VQE pipeline — offline, once per material type
+
+```
+PySCF classical pre-computation
+    ↓  hᵢⱼ, gᵢⱼₖₗ integrals — CAS(10,8) active space
+Jordan-Wigner mapping  →  380 Pauli terms
+    ↓
+UCCSD ansatz  (16 qubits, 220 parameters)
+    ↓
+COBYLA (200 iters) → SPSA (50) → L-BFGS-B (|ΔE| < 1×10⁻⁵)
+    ↓
+E�� = −2847.3142 ± 0.0048 Hartree
+    ↓
+band_gap = 2.10 eV  |  tunnelling_factor = 0.0023  |  k_base = 3.47×10⁻⁹
+```
+
+### Four delta equations per zone per timestep
+
+```
+Eq 1  delta_corrosion_mm     = k_base × f_T × f_S × f_O2 × M_Fe × Δt
+Eq 2  delta_coating_mm       = −k_coat × Δcorrosion × coating_thickness
+Eq 3  delta_roughness_um     = α_r × Δcorrosion + β_r × fouling × Δt
+Eq 4  delta_fouling_coverage = k_f × (1 − fouling) × f_vel(v) × Δt
+```
+
+### Bayesian correction — drydock survey loop
+
+| State | k uncertainty |
+|---|---|
+| Prior (no surveys) | ±64% |
+| After survey 1 | ±31% |
+| After survey 2 | ±14% |
+| After survey 3 | ±6% |
+
+### Confidence flags
+
+| Flag | σ / value | Engine behaviour |
+|---|---|---|
+| `NOMINAL` | < 20% | Automatic decisions enabled |
+| `LOW` | 20–50% | Human review required |
+| `CRITICAL` | > 50% | No autonomous action |
+
+---
+
+## Task 3 — Signal Generator Design
+
+**Run:** `python run_signal.py`
+**Review:** `review_packets/task_3_review.md`
+
+### `generate_state_event(input_payload: dict) -> dict`
+
+Single callable. No constructor. No instance required.
+
+```
+input_payload
+    ↓
+validate_input()          fails loudly if anything wrong
+    ↓
+resolve_transition()      deterministic priority-ordered rule table
+    ↓
+timestamp                 anchor(2026-01-01T00:00:00Z) + (iterations × 60s)
+    ↓
+event assembly            engine_event_version 2.0
+    ↓
+validate_output()         confirms shape before returning
+    ↓
+return event
+```
+
+### Transition table (first match wins)
+
+| Condition | Next state |
+|---|---|
+| `energy_delta > 0.01` | `DIVERGED` |
+| `iterations > 500` | `DIVERGED` |
+| `confidence < 0.70` | `SUSPENDED` |
+| `variance > 0.01` | `SUSPENDED` |
+| `confidence >= 0.85` AND `variance <= 0.005` AND `energy_delta <= 0.005` | `CONVERGED` |
+| fallback | `SUSPENDED` |
+
+`sigma = sqrt(variance)` · `prev = "INITIALISING"` if `iterations == 0` else `"ACTIVE"`
+
+### Live example
+
+**Input:**
+```json
+{
+    "node_id": "qnode_01",  "energy_delta": 0.0001,
+    "iterations": 120,      "confidence": 0.92,  "variance": 0.002
+}
+```
+
+**Output:**
+```json
+{
+    "engine_event_version": "2.0",
+    "node_ref": "qnode_01",
+    "transition": {
+        "prev": "ACTIVE", "next": "CONVERGED",
+        "cause": "confidence=0.92>=0.85, variance=0.002<=0.005, energy_delta=0.0001<=0.005",
+        "seq": 1, "ts": "2026-01-01T02:00:00Z"
+    },
+    "uncertainty_envelope": { "confidence": 0.92, "sigma": 0.04472136 }
+}
+```
+
+---
+
+## Task 4 — BHIV Core Interface Preparation
+
+**Run:** `python run_signal.py`
+**Review:** `review_packets/task_4_review.md`
+
+### What was hardened
+
+| Component | File | Guarantee |
+|---|---|---|
+| `generate_state_event()` | `signal_generator.py` | Single callable — no constructor, no instance |
+| `resolve_transition()` | `mapping_logic.py` | Pure function — no side effects, no randomness, no I/O |
+| `validate_input()` | `validator.py` | Type + range + presence — exact error messages |
+| `validate_output()` | `validator.py` | All required keys + `seq` is `int` — checked before return |
+
+### Failure cases
+
+| Input | Result |
+|---|---|
+| Missing `energy_delta` | `ValidationError: Missing required field(s): ['energy_delta']` |
+| `confidence = 0.55` | `SUSPENDED — below 0.70 floor` |
+| `energy_delta = 0.05` | `DIVERGED — exceeds 0.01 threshold` |
+| `confidence = 1.5` | `ValidationError: must be a float in [0.0, 1.0]` |
+
+### 5-run determinism proof
+
+```
+Run 1: transition='CONVERGED'   sigma=0.04472136   ts=2026-01-01T02:00:00Z
+Run 2: transition='CONVERGED'   sigma=0.04472136   ts=2026-01-01T02:00:00Z
+Run 3: transition='CONVERGED'   sigma=0.04472136   ts=2026-01-01T02:00:00Z
+Run 4: transition='CONVERGED'   sigma=0.04472136   ts=2026-01-01T02:00:00Z
+Run 5: transition='CONVERGED'   sigma=0.04472136   ts=2026-01-01T02:00:00Z
+
+[PASS] All 5 outputs IDENTICAL — determinism CONFIRMED
+```
+
+---
+
+## Task 5 — Contract Governance Layer
+
+**Product lane:** Quantum Infrastructure / Contract Discipline
+
+A formal contract layer between the quantum computation output and BHIV Core.
+
+**Key deliverables:**
+- `quantum_output_schema.json` — typed contract with validation rules for every field
+- Integration contract **MARINE-INT-002 v1.0.0** — full input/output packet format
+- Contract version negotiation between producer and consumer
+- Enforcement boundary: computation authority ≠ execution authority
+
+**Principles:**
+- Schema is versioned — breaking changes require an explicit version bump
+- All fields are typed and range-bounded — no implicit coercion in the consumer
+- Contract violations halt execution before any downstream computation begins
+- The governance layer never mutates computation output — read-only
+
+---
+
+## Task 6 — Bounded Probabilistic Computation
+
+**Product lane:** Quantum Infrastructure / Uncertainty Quantification
+
+First-order error propagation through the full k_base chain.
+Every output delta carries a bounded 95% confidence interval.
+
+**Propagation path:**
+```
+σ_E₀ (±0.0048 Hartree from VQE)
+    ↓
+σ_k_base  →  σ_delta_corrosion  →  σ_delta_coating  →  σ_delta_roughness
+    ↓
+95% CI on every delta  →  NOMINAL / LOW / CRITICAL flag
+```
+
+**Guarantee:** `CRITICAL`-flagged outputs block autonomous action permanently
+until cleared by human review.
+
+---
+
+## Task 7 — Governance-Aware QApp Wrapping
+
+**Product lane:** Quantum Infrastructure / Governed QApp Runtime
+
+The QApp wrapper enforces the three-layer authority model:
+
+```
+Quantum engine  →  computes
+Wrapper         →  governs
+BHIV Core       →  executes
+```
+
+**Wrapper responsibilities:**
+- Validate output against the active contract version
+- Attach `approval_required`, `execution_class`, `authority_level` metadata
+- Block execution when confidence flags are insufficient for the requested action
+- Route to human review queue on `LOW` or `CRITICAL` flags
+- Produce a full audit log entry for every governance decision
+
+No layer crosses into another's authority. Wrapper is read-only on computation output.
+
+---
+
+## Task 8 — Hybrid Quantum-Classical Runtime
+
+**Product lane:** Quantum Infrastructure / Hybrid Runtime Coordination
+
+Coordination layer managing the handoff between quantum computation and
+classical simulation within one timestep cycle per zone.
+
+**Timestep cycle:**
+```
+Step 1  Quantum phase    ← VQE parameters from offline cache (not re-run per step)
+Step 2  Classical phase  ← 4 delta equations applied with quantum k values
+Step 3  Uncertainty      ← propagated through classical chain
+Step 4  Governance       ← flags evaluated, execution class assigned
+Step 5  State update     ← zone variables updated — append-only log entry
+Step 6  Output emit      ← structured event dispatched to BHIV Core
+```
+
+**Hard contract:** partial state is never committed.
+Any failure in any step aborts the full timestep.
+Replay of any timestep from its log entry reproduces identical output.
+
+---
+
+## Task 9 — Distributed QApp Propagation Layer
+
+**Run:** `python run_distributed_qapp.py`
+**Review:** `REVIEW_PACKET.md` (10 sections)
+**Testing:** `TESTING_PACKET.md` (BHIV Universal Testing Protocol v2 — Vinayak)
+
+Proves the QApp can survive as a distributed infrastructure participant —
+causal propagation, append-only replay, observable consensus, governed failure handling.
+
+### 8 phases
+
+| Phase | Name | What runs |
+|---|---|---|
+| 1 | QApp Invocation Envelope | 3 deterministic envelopes — SHA-256 IDs, no `datetime.now()` |
+| 2 | Distributed Node Simulation | Node_A, Node_B, Node_C — 4 tracking fields, genesis hashes |
+| 3 | QApp Propagation Engine | Fan-out A → [B, C] — append-only log, every step printed |
+| 4 | Distributed Replay Reconstruction | Causal sort + hash rebuild — verified against live nodes |
+| 5 | Divergence + Failure Simulation | 4 cases — loud halt, state preserved, no silent recovery |
+| 6 | Observability Layer | Propagation chain · node status · divergence · consensus hash |
+| 7 | Determinism Proof | 5× replay identical · 3× shuffle convergence |
+| 8 | REVIEW_PACKET.md | Presence + all 10 sections verified at runtime |
+
+### Propagation model
+
+```
+QAppExecutionEnvelope (seq=N)
+        │
+        ▼
+  Node_A  ←  origin
+        │
+        ├──────→  Node_B  ✅
+        └──────→  Node_C  ✅
+```
+
+All steps logged to an append-only `_PROPAGATION_LOG`.
+`replay_qapp_log()` causal-sorts by `(sequence_id, step_order)` —
+replay is **log-order-independent**.
+
+### QAppExecutionEnvelope — all 8 fields
+
+| Field | Derivation |
+|---|---|
+| `trace_id` | `SHA-256("trace:{qapp_id}:{node_origin}:{seq}")` |
+| `qapp_id` | Caller-supplied |
+| `node_origin` | `"Node_A"` |
+| `invocation_id` | `SHA-256("invoke:{trace_id}:{payload_hash}:{seq}")` |
+| `payload_hash` | `SHA-256(canonical_json(payload, sort_keys=True))` |
+| `sequence_id` | Monotonic int ≥ 1 |
+| `timestamp` | `2026-01-01T00:00:00Z + (seq × 60s)` — no wall clock |
+| `contract_version` | `"qapp-v1.0"` |
+
+### Execution hash chain
+
+```
+hash₀  =  SHA-256("INIT:<node_id>")
+hashₙ  =  SHA-256(f"{hashₙ₋₁}:{invocation_id_n}")
+```
+
+Inserting, deleting, or reordering any received invocation changes
+every downstream hash link — tamper-evident without external libraries.
+
+### Failure cases
+
+| Case | Trigger | Policy | Exception |
 |---|---|---|---|
-| CONVERGED | EXECUTED | ✅ Called | ✅ Updated |
-| SUSPENDED | SKIPPED | ❌ Not called | ❌ Unchanged |
-| DIVERGED | LOGGED | ❌ Not called | ❌ Unchanged |
-| Bad schema | REJECTED | ❌ Not called | ❌ Unchanged |
+| Delayed propagation | `seq` gap > threshold | Accept with `CAUSAL_DELAY` flag — never drop | None |
+| Duplicate propagation | Same `invocation_id` twice | Hard reject — replay log unchanged | `PropagationFailure` |
+| Missing propagation | Expected node never received | Halt — consensus unreachable | `PropagationFailure` |
+| Out-of-order sequence | Non-monotonic `seq` batch | Halt — reorder required | `PropagationFailure` |
 
-### Signal → Physical Rate Mapping (deterministic)
+No silent recovery on any case. Every failure prints before raising.
 
-```
-corrosion_rate           = 0.02 + (1 − confidence) × 0.05
-coating_degradation_rate = 0.01 + sigma × 0.5
-barnacle_growth_rate     = 0.10 + (1 − confidence) × 0.3
-roughness_rate           = 0.002 + sigma × 0.05
-dt                       = 1.0
-```
-
-Same event → same rates → same ShipState → same global hash. Always.
-
-### SequenceRegistry (per-node monotonic sequencing)
-
-```python
-from src.signal_generator import generate_signal, SequenceRegistry
-
-registry = SequenceRegistry()
-e1 = generate_signal(payload_qnode01_a, registry)  # qnode_01 → sequence_id=1
-e2 = generate_signal(payload_qnode01_b, registry)  # qnode_01 → sequence_id=2
-e3 = generate_signal(payload_qnode02,   registry)  # qnode_02 → sequence_id=1
-```
-
-Caller-owned. No global state. Per-node counters are independent.
-
----
-
-## Physical Engine Layer (Kanishk — Sealed)
-
-### Hull Zone State
-
-Each zone tracks 5 physical properties at 8-decimal fixed precision:
-
-| Field | Unit | Description |
-|---|---|---|
-| `corrosion_depth` | mm | Cumulative corrosion |
-| `coating_thickness` | mm | Remaining protective coating (≥ 0) |
-| `barnacle_density` | units/m² | Biofouling coverage (≥ 0) |
-| `roughness` | index | Surface roughness (≥ 0) |
-| `risk_score` | — | Computed: `0.35×corr + 0.25×(1/coat) + 0.20×barn + 0.20×rough` |
-
-### Distributed Execution (Phase 4)
+### Determinism proof — live output
 
 ```
-Client_1 ──┐
-Client_2 ──┤──> PhysicalExecutionHub ──> [Sector_A, Sector_B, Sector_C]
-Client_3 ──┘                                      ↓
-                                              consensus check
-                                           (halt on divergence)
+Proof A — 5× replay of frozen log
+  Run 1:  consensus=10dd6b9a5e9972100ad39d67d95d878c...  ✅
+  Run 2:  consensus=10dd6b9a5e9972100ad39d67d95d878c...  ✅
+  Run 3:  consensus=10dd6b9a5e9972100ad39d67d95d878c...  ✅
+  Run 4:  consensus=10dd6b9a5e9972100ad39d67d95d878c...  ✅
+  Run 5:  consensus=10dd6b9a5e9972100ad39d67d95d878c...  ✅
+  [PASS]  All 5 hashes IDENTICAL
+
+Proof B — 3× shuffle → re-sort → replay
+  Shuffle 1:  seqs=[3,1,2]  →  consensus=10dd6b9a...  ✅ matches canonical
+  Shuffle 2:  seqs=[2,3,1]  →  consensus=10dd6b9a...  ✅ matches canonical
+  Shuffle 3:  seqs=[1,3,2]  →  consensus=10dd6b9a...  ✅ matches canonical
+  [PASS]  All shuffled replays converge to canonical
 ```
 
-Hub guarantees:
-- Every proposal gets a unique, monotonically increasing `causal_id`
-- Duplicate `proposal_id` rejected (idempotency)
-- Hub halts if any node rejects or nodes diverge
-
-### Execution Trace Verification (Phase 7 of physical engine)
+### Observability output — Phase 6 console
 
 ```
-execution_trace_output.json shows:
-  Initial hash:      26f283980dc23de7...
-  Local final hash:  de3561826877eaa8...
-  Distributed hash:  de3561826877eaa8...   ← matches local
-  Replay hash:       de3561826877eaa8...   ← matches both
+┌── Propagation Chain ───────────────────────────────────────────┐
+│  seq=1  ts=2026-01-01T00:01:00Z  Node_A → Node_B ✅  Node_A → Node_C ✅
+│  seq=2  ts=2026-01-01T00:02:00Z  Node_A → Node_B ✅  Node_A → Node_C ✅
+│  seq=3  ts=2026-01-01T00:03:00Z  Node_A → Node_B ✅  Node_A → Node_C ✅
+└────────────────────────────────────────────────────────────────┘
 
-  All hashes identical: YES ✓
-  Distributed consensus: true
-  Divergence rate: 0.0
+┌── Node Replay Status ──────────────────────────────────────────┐
+│  Node_A   recv=3  propagated=6  hash=1835de92a3da9640...
+│  Node_B   recv=3  propagated=0  hash=b416edc52c4cf774...
+│  Node_C   recv=3  propagated=0  hash=b4bc9b7a824f8eda...
+└────────────────────────────────────────────────────────────────┘
+
+┌── Divergence Detection ────────────────────────────────────────┐
+│  Divergence : ✅ NONE — nodes consistent
+└────────────────────────────────────────────────────────────────┘
+
+┌── Final Consensus Hash ────────────────────────────────────────┐
+│  consensus : 10dd6b9a5e9972100ad39d67d95d878c40679206...
+│  log_hash  : 65e6cc6cff9869ec3fe020cc25d00aff65d8d45f...
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Quantum Pipeline Layer — Task 8  ← NEW
+## System-Wide Guarantees
 
-### What Was Built
-
-A real, executable quantum computation pipeline that:
-1. Takes environmental parameters (salinity, temperature, O₂ concentration)
-2. Builds a parameterised quantum circuit (VQE for ground-state energy)
-3. Executes on a local Qiskit Aer simulator (no cloud dependency)
-4. Converts the measurement distribution into a structured classical result
-5. Wraps in a deterministic contract passable to the signal pipeline
-
-### Algorithms Implemented
-
-| Algorithm | Problem | BHIV Use Case |
-|---|---|---|
-| VQE | Ground-state energy of molecular systems | Corrosion rate constant `k` from iron oxide chemistry |
-| QAOA | Combinatorial optimisation | Optimal inspection zone scheduling |
-| QFT | Frequency analysis | Periodic degradation pattern detection |
-| Grover Search | Unstructured search | Fast zone risk lookup |
-| QPE | Eigenvalue estimation | Precision energy level computation |
-
-### Quantum Output Schema
-
-```json
-{
-  "quantum_execution_id":  "qexec_bow_20260515_001",
-  "algorithm":             "VQE",
-  "model_version":         "v1.0.0",
-  "zone_id":               "bow",
-  "circuit_depth":         24,
-  "shot_count":            1024,
-  "execution_time_ms":     312.4,
-  "energy_ground_state":   -2847.3142,
-  "energy_uncertainty":    0.0048,
-  "measurement_distribution": { "0011": 412, "0101": 298, ... },
-  "derived_parameters": {
-    "band_gap":            2.10,
-    "tunnelling_factor":   0.0023,
-    "k_base":              3.47e-9
-  },
-  "confidence_flag":       "NOMINAL",
-  "contract_hash":         "sha256:..."
-}
-```
-
-### Quantum → Classical Boundary
-
-Raw quantum output **cannot** directly control physical systems because:
-
-1. **Measurement is probabilistic** — each shot collapses to a basis state; the distribution must be interpreted statistically
-2. **Noise** — even simulators approximate; real hardware adds decoherence
-3. **Basis ambiguity** — the same energy can map to multiple physical configurations
-
-The boundary contract resolves this:
-
-```
-QuantumExecutionResult
-    ↓  validate_quantum_contract()
-ConfidenceFlag: NOMINAL / LOW / CRITICAL
-    ↓
-NOMINAL   → k_base passed to TransitionInput (automatic)
-LOW       → human review required before execution
-CRITICAL  → no autonomous action permitted
-```
-
-### Determinism Proof (quantum layer)
-
-```
-Same seed (42) → same Qiskit Aer simulator → same measurement distribution
-Same distribution → same k_base derivation → same contract hash
-
-Run 1: contract_hash = a3f8c2d1...   NOMINAL
-Run 2: contract_hash = a3f8c2d1...   NOMINAL
-Run 3: contract_hash = a3f8c2d1...   NOMINAL
-Run 4: contract_hash = a3f8c2d1...   NOMINAL
-Run 5: contract_hash = a3f8c2d1...   NOMINAL
-
-[PASS] All 5 identical — quantum determinism CONFIRMED (seeded simulator).
-```
-
----
-
-## System Boundaries
-
-| Layer | Owner | Responsibility |
-|---|---|---|
-| **Quantum Pipeline** | Dhiraj (Task 8) | Environmental params → quantum circuit → k_base |
-| **Signal Generator** | Dhiraj (Tasks 1–7) | k_base / VQE output → state event |
-| **BHIV Core** | Backend / Core | Route events to execution engine |
-| **Physical Engine** | Kanishk | Consume events, mutate hull state |
-| **Enforcement** | Raj Prajapati | Validate execution permissions |
-| **Core Routing** | Nilesh | TANTRA wiring (future) |
-
-The quantum layer does **not** know:
-- Whether its output was APPLIED, SKIPPED, or LOGGED downstream
-- Kanishk's hash chain contents
-- Cross-node execution order
-
----
-
-## Failure Cases
-
-### Signal Layer
-
-| Input | Result |
+| Guarantee | How enforced |
 |---|---|
-| `confidence = 0.55` | SUSPENDED — below 0.70 floor |
-| `energy_delta = 0.05` | DIVERGED — exceeds 0.01 threshold |
-| Missing `energy_delta` | ValidationError — caught before any logic |
-| `confidence = 1.5` | ValidationError — out of range [0.0, 1.0] |
-
-### Quantum Layer
-
-| Input | Result |
-|---|---|
-| Negative salinity | ValidationError — physical bounds check |
-| Shot count < 1 | ValidationError — rejected before circuit build |
-| `energy_uncertainty / energy` > 50% | `confidence_flag = CRITICAL` — no autonomous action |
-| Malformed quantum output dict | `validate_quantum_contract()` → FAIL |
+| **Determinism** | No `datetime.now()`, no randomness, no hidden state across all 9 tasks |
+| **Fail loudly** | Every failure raises with an exact human-readable reason before any computation |
+| **No silent recovery** | Failures halt — never swallowed, never auto-retried |
+| **Append-only audit** | Propagation logs and zone update logs never mutated after write |
+| **Bounded uncertainty** | Every output delta carries a 95% CI and `NOMINAL / LOW / CRITICAL` flag |
+| **Authority separation** | Compute · govern · execute are distinct layers — none crosses into another |
+| **Replay safety** | Same log (any input order) → same hash, same state, always |
+| **Contract discipline** | Schema versioned — breaking changes require explicit version bump |
+| **Infrastructure survivability** | Distributed propagation + causal ordering + consensus verified (Task 9) |
 
 ---
 
-## Guarantees
+## Integration Block
 
-| Guarantee | Scope |
-|---|---|
-| Same input → identical output | Signal layer, quantum layer (seeded), physical engine |
-| No randomness | Signal layer (wall clock never used) |
-| No file I/O | Signal layer, integration runner |
-| No global mutable state | Signal layer (SequenceRegistry is caller-owned) |
-| Fails loudly on bad input | All layers — no silent failures |
-| Causal ordering | Physical hub — `causal_id` is sole authority |
-| Distributed consensus | Physical hub halts on hash divergence |
-| Round-trip hash integrity | ShipStateVector: `to_dict → from_dict` preserves hash |
-| Replay determinism | Physical engine: same inputs → same final hash |
+| Partner | Role | Contract surface |
+|---|---|---|
+| **Kanishk** | Distributed replay-safe execution and reconciliation | `replay_qapp_log()` output schema |
+| **Raj** | Invocation and routing architecture | `QAppExecutionEnvelope.to_dict()` schema |
+| **Raj Prajapati** | Enforcement and execution governance | `PropagationFailure` exception contract |
+| **Jaffer Ali** | Distributed telemetry propagation systems | `_PROPAGATION_LOG` entry schema |
+| **Ganesh** | Deterministic runtime coordination systems | `consensus_hash` and `log_hash` fields |
 
 ---
 
-## Dependencies
+## Testing
 
-```
-# Signal + Physical Engine (Tasks 1–7)
-# Pure Python standard library — no pip install needed
-# Python >= 3.8
+### Tasks 1–4
 
-# Quantum Pipeline (Task 8)
-pip install qiskit qiskit-aer
-
-# All other standard library modules used:
-# math, datetime, json, hashlib, hashlib, sys, io, os, time, uuid, dataclasses
+```bash
+python run_signal.py
+# Phases: single execution → 4 failure cases → 5-run determinism proof
 ```
 
+### Task 9
+
+```bash
+python run_distributed_qapp.py
+# Phases 1–8 run automatically. Exit 0 = all passed.
+```
+
+Vinayak (Testing Department) must verify Task 9 using
+**BHIV Universal Testing Protocol v2** → see `TESTING_PACKET.md`
+
+**13 test cases · 6 domains:**
+Replay Consistency · Divergence Handling · Propagation Determinism ·
+Hash Agreement · Failure Isolation · Observability Correctness
+
 ---
 
-## Dhiraj Chavan · Marine Intelligence System · May 2026
+## stdlib Used (full stack)
+
+| Module | Tasks | Purpose |
+|---|---|---|
+| `math` | 1–4 | `sqrt()` for sigma |
+| `datetime` | All | Deterministic timestamps — `datetime.now()` **never called** |
+| `json` | All | Canonical serialisation (`sort_keys=True`) |
+| `sys` | All | Exit codes · path management |
+| `os` | All | Path resolution |
+| `io` | All | UTF-8 stdout on Windows |
+| `hashlib` | 9 | SHA-256 for all IDs and hash chains |
+| `dataclasses` | 9 | `@dataclass(frozen=True)` — immutable envelope |
+| `random` | 9 | Phase 7 shuffle proof only — not in core logic |
+
+---
+
+## Architecture Constraints (all tasks)
+
+Per spec at every stage — strictly not built:
+
+```
+❌  Networking stacks
+❌  Async queue systems  (no Kafka · no RabbitMQ · no asyncio)
+❌  Distributed databases
+❌  Cloud infrastructure
+❌  Orchestration engines  (no Kubernetes · no Docker)
+❌  UI or dashboards
+```
+
+The stack is:
+**bounded · inspectable · deterministic · replay-safe · operationally understandable**
+
+---
+
+## Strategic Direction
+
+Nine tasks. One direction.
+
+From → *"can the quantum system run?"*
+To   → *"can the quantum system survive as infrastructure?"*
+
+**Trajectory:**
+QApps → QDApps → governed quantum middleware →
+hybrid quantum-classical runtime systems →
+sovereign computational infrastructure inside the **TANTRA** direction.
+
+---
+
+*Dhiraj Chavan · Marine Intelligence System · BHIV Core · May 2026*
